@@ -8,6 +8,9 @@ const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
 
 async function main() {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
   console.log(chalk.cyan.bold('\n欢迎使用 Skill Manager!\n'));
 
   // 检查权限
@@ -29,6 +32,32 @@ async function main() {
     console.log(chalk.green('✓ 创建配置文件：config.json'));
     console.log(chalk.green(`✓ 创建源目录：${cfg.sourceDir}`));
     console.log(chalk.green('✓ 检测到 4 个工具目录\n'));
+  }
+
+  // 处理快捷命令
+  if (command) {
+    switch (command) {
+      case 'status':
+        await showStatus(cfg);
+        process.exit(0);
+        break;
+      case 'sync':
+        await syncAll(cfg);
+        process.exit(0);
+        break;
+      case 'validate':
+        await validateLinks(cfg);
+        process.exit(0);
+        break;
+      default:
+        console.log(chalk.red(`未知命令: ${command}\n`));
+        console.log('可用命令:');
+        console.log('  node index.js          - 启动交互式菜单');
+        console.log('  node index.js status   - 查看状态');
+        console.log('  node index.js sync     - 同步所有');
+        console.log('  node index.js validate - 验证链接\n');
+        process.exit(1);
+    }
   }
 
   // 显示菜单
@@ -549,6 +578,47 @@ async function syncAll(cfg) {
   }
   if (skipCount > 0) {
     console.log(chalk.yellow(`  跳过: ${skipCount}`));
+  }
+  console.log();
+}
+
+async function validateLinks(cfg) {
+  console.log(chalk.cyan('\n🔍 验证所有软链接...\n'));
+
+  const enabledSkills = Object.keys(cfg.skills);
+
+  if (enabledSkills.length === 0) {
+    console.log(chalk.yellow('暂无已启用的 Skill\n'));
+    return;
+  }
+
+  const targets = config.getTargets(cfg);
+  let validCount = 0;
+  let invalidCount = 0;
+  const invalidLinks = [];
+
+  for (const skillName of enabledSkills) {
+    const enabledTools = cfg.skills[skillName];
+    const sourcePath = path.join(cfg.sourceDir, skillName);
+
+    for (const tool of enabledTools) {
+      const targetPath = path.join(targets[tool], skillName);
+
+      if (linker.isValidSymlink(targetPath, sourcePath)) {
+        validCount++;
+      } else {
+        invalidCount++;
+        invalidLinks.push({ skill: skillName, tool });
+        console.log(chalk.red(`✗ ${skillName} → ${tool}: 链接无效或已损坏`));
+      }
+    }
+  }
+
+  console.log(chalk.cyan('\n验证完成：'));
+  console.log(chalk.green(`  有效: ${validCount}`));
+  if (invalidCount > 0) {
+    console.log(chalk.red(`  无效: ${invalidCount}`));
+    console.log(chalk.yellow('\n提示: 运行 "node index.js sync" 修复损坏的链接'));
   }
   console.log();
 }
