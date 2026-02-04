@@ -220,7 +220,81 @@ async function addSkill(cfg) {
 }
 
 async function disableSkill(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  // 检查是否有已启用的 skills
+  const enabledSkills = Object.keys(cfg.skills);
+
+  if (enabledSkills.length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Skill\n'));
+    return;
+  }
+
+  // 选择要禁用的 skill
+  const { skillName } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'skillName',
+      message: '选择要禁用的 Skill:',
+      choices: enabledSkills
+    }
+  ]);
+
+  const enabledTools = cfg.skills[skillName];
+
+  if (enabledTools.length === 0) {
+    console.log(chalk.yellow('\n该 Skill 未启用到任何工具\n'));
+    return;
+  }
+
+  // 选择要从哪些工具禁用
+  const { selectedTools } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedTools',
+      message: '选择要禁用的工具:',
+      choices: enabledTools.map(tool => ({
+        name: tool,
+        value: tool,
+        checked: true
+      }))
+    }
+  ]);
+
+  if (selectedTools.length === 0) {
+    console.log(chalk.yellow('\n未选择任何工具\n'));
+    return;
+  }
+
+  // 删除软链接
+  const targets = config.getTargets(cfg);
+  console.log();
+
+  for (const tool of selectedTools) {
+    const targetPath = path.join(targets[tool], skillName);
+
+    const result = linker.removeSymlink(targetPath);
+
+    if (result.success) {
+      if (result.skipped) {
+        console.log(chalk.gray(`⊙ ${skillName} → ${tool}: ${result.message}`));
+      } else {
+        console.log(chalk.green(`✓ ${skillName} → ${tool}: ${result.message}`));
+      }
+
+      // 更新配置
+      cfg.skills[skillName] = cfg.skills[skillName].filter(t => t !== tool);
+    } else {
+      console.log(chalk.red(`❌ ${skillName} → ${tool}: ${result.message}`));
+    }
+  }
+
+  // 如果该 skill 不再启用到任何工具，从配置中删除
+  if (cfg.skills[skillName].length === 0) {
+    delete cfg.skills[skillName];
+  }
+
+  // 保存配置
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
 }
 
 async function removeSkill(cfg) {
