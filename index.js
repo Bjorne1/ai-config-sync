@@ -1,6 +1,7 @@
 const inquirer = require('inquirer');
 const chalk = require('chalk');
 const Table = require('cli-table3');
+const path = require('path');
 const config = require('./lib/config');
 const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
@@ -95,7 +96,52 @@ async function removeSkill(cfg) {
 }
 
 async function showStatus(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  console.log(chalk.cyan('\n📊 当前状态：\n'));
+
+  const targets = config.getTargets(cfg);
+  const toolNames = Object.keys(targets);
+
+  // 检查源目录
+  console.log(chalk.gray(`源目录: ${cfg.sourceDir}`));
+
+  // 如果没有配置任何 skill
+  if (Object.keys(cfg.skills).length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Skill\n'));
+    return;
+  }
+
+  // 创建表格
+  const table = new Table({
+    head: ['Skill', ...toolNames],
+    style: { head: ['cyan'] }
+  });
+
+  // 填充表格数据
+  Object.keys(cfg.skills).forEach(skillName => {
+    const enabledTools = cfg.skills[skillName];
+    const row = [skillName];
+
+    toolNames.forEach(tool => {
+      if (enabledTools.includes(tool)) {
+        // 检查链接是否有效
+        const targetPath = path.join(targets[tool], skillName);
+        const sourcePath = path.join(cfg.sourceDir, skillName);
+
+        if (linker.isValidSymlink(targetPath, sourcePath)) {
+          row.push(chalk.green('✓'));
+        } else {
+          row.push(chalk.red('✗'));
+        }
+      } else {
+        row.push(chalk.gray('-'));
+      }
+    });
+
+    table.push(row);
+  });
+
+  console.log(table.toString());
+  console.log();
 }
 
 async function changeSourceDir(cfg) {
