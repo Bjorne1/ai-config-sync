@@ -298,7 +298,70 @@ async function disableSkill(cfg) {
 }
 
 async function removeSkill(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  // 检查是否有已启用的 skills
+  const enabledSkills = Object.keys(cfg.skills);
+
+  if (enabledSkills.length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Skill\n'));
+    return;
+  }
+
+  // 选择要移除的 skills
+  const { selectedSkills } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedSkills',
+      message: '选择要移除的 Skills (仅删除链接，不删除源文件):',
+      choices: enabledSkills
+    }
+  ]);
+
+  if (selectedSkills.length === 0) {
+    console.log(chalk.yellow('\n未选择任何 Skill\n'));
+    return;
+  }
+
+  // 二次确认
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: `确认从所有工具移除 ${selectedSkills.length} 个 Skill？`,
+      default: false
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('\n操作已取消\n'));
+    return;
+  }
+
+  // 删除软链接
+  const targets = config.getTargets(cfg);
+  console.log();
+
+  for (const skillName of selectedSkills) {
+    const enabledTools = cfg.skills[skillName] || [];
+
+    for (const tool of enabledTools) {
+      const targetPath = path.join(targets[tool], skillName);
+
+      const result = linker.removeSymlink(targetPath);
+
+      if (result.success) {
+        console.log(chalk.green(`✓ ${skillName} → ${tool}: ${result.message}`));
+      } else {
+        console.log(chalk.red(`❌ ${skillName} → ${tool}: ${result.message}`));
+      }
+    }
+
+    // 从配置中删除
+    delete cfg.skills[skillName];
+  }
+
+  // 保存配置
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
 }
 
 async function showStatus(cfg) {
