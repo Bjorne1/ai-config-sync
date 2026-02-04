@@ -461,7 +461,96 @@ async function changeSourceDir(cfg) {
 }
 
 async function syncAll(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  console.log(chalk.cyan('\n🔄 开始同步所有 Skill...\n'));
+
+  // 检查是否有已启用的 skills
+  const enabledSkills = Object.keys(cfg.skills);
+
+  if (enabledSkills.length === 0) {
+    console.log(chalk.yellow('暂无已启用的 Skill\n'));
+    return;
+  }
+
+  const targets = config.getTargets(cfg);
+  let successCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+
+  for (const skillName of enabledSkills) {
+    const enabledTools = cfg.skills[skillName];
+    const sourcePath = path.join(cfg.sourceDir, skillName);
+
+    // 检查源是否存在
+    if (!fs.existsSync(sourcePath)) {
+      console.log(chalk.red(`✗ ${skillName}: 源文件不存在，已跳过`));
+      skipCount++;
+      continue;
+    }
+
+    const isDirectory = fs.statSync(sourcePath).isDirectory();
+
+    for (const tool of enabledTools) {
+      const targetDir = targets[tool];
+
+      // 检查目标目录是否存在
+      if (!fs.existsSync(targetDir)) {
+        console.log(chalk.yellow(`⚠ ${skillName} → ${tool}: 目标目录不存在，已跳过`));
+        skipCount++;
+        continue;
+      }
+
+      linker.ensureTargetDir(targetDir);
+
+      const targetPath = path.join(targetDir, skillName);
+
+      // 如果已存在有效链接，跳过
+      if (linker.isValidSymlink(targetPath, sourcePath)) {
+        console.log(chalk.gray(`⊙ ${skillName} → ${tool}: 链接有效`));
+        successCount++;
+        continue;
+      }
+
+      // 如果存在损坏的链接或文件，删除
+      if (fs.existsSync(targetPath)) {
+        try {
+          const stats = fs.lstatSync(targetPath);
+          if (stats.isSymbolicLink()) {
+            fs.unlinkSync(targetPath);
+          } else if (stats.isDirectory()) {
+            fs.rmSync(targetPath, { recursive: true });
+          } else {
+            fs.unlinkSync(targetPath);
+          }
+        } catch (error) {
+          console.log(chalk.red(`✗ ${skillName} → ${tool}: 清理失败 - ${error.message}`));
+          failCount++;
+          continue;
+        }
+      }
+
+      // 创建软链接
+      const result = linker.createSymlink(sourcePath, targetPath, isDirectory);
+
+      if (result.success) {
+        console.log(chalk.green(`✓ ${skillName} → ${tool}: 修复成功`));
+        successCount++;
+      } else {
+        console.log(chalk.red(`✗ ${skillName} → ${tool}: ${result.message}`));
+        failCount++;
+      }
+    }
+  }
+
+  // 统计
+  console.log(chalk.cyan('\n同步完成：'));
+  console.log(chalk.green(`  成功: ${successCount}`));
+  if (failCount > 0) {
+    console.log(chalk.red(`  失败: ${failCount}`));
+  }
+  if (skipCount > 0) {
+    console.log(chalk.yellow(`  跳过: ${skipCount}`));
+  }
+  console.log();
 }
 
 // 启动
