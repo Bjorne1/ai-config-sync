@@ -2,6 +2,7 @@ const inquirer = require('inquirer');
 const chalk = require('chalk');
 const Table = require('cli-table3');
 const path = require('path');
+const fs = require('fs');
 const config = require('./lib/config');
 const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
@@ -84,7 +85,138 @@ async function showMenu(cfg) {
 
 // TODO: implement menu actions
 async function addSkill(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  // 扫描源目录
+  const skills = scanner.scanSkills(cfg.sourceDir);
+
+  if (skills.length === 0) {
+    console.log(chalk.yellow('\n源目录为空，请先添加 skill 文件\n'));
+    return;
+  }
+
+  // 选择要启用的 skills
+  const { selectedSkills } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedSkills',
+      message: '选择要启用的 Skills:',
+      choices: skills.map(s => ({
+        name: `${s.name}${s.isDirectory ? ' (目录)' : ''}`,
+        value: s
+      }))
+    }
+  ]);
+
+  if (selectedSkills.length === 0) {
+    console.log(chalk.yellow('\n未选择任何 Skill\n'));
+    return;
+  }
+
+  // 选择要启用到哪些工具
+  const targets = config.getTargets(cfg);
+  const toolNames = Object.keys(targets);
+
+  const { selectedTools } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedTools',
+      message: '选择要启用到的工具:',
+      choices: toolNames.map(tool => ({
+        name: tool,
+        value: tool,
+        checked: true // 默认全选
+      }))
+    }
+  ]);
+
+  if (selectedTools.length === 0) {
+    console.log(chalk.yellow('\n未选择任何工具\n'));
+    return;
+  }
+
+  // 创建软链接
+  console.log();
+  for (const skill of selectedSkills) {
+    for (const tool of selectedTools) {
+      const targetDir = targets[tool];
+
+      // 检查目标目录是否存在
+      if (!fs.existsSync(targetDir)) {
+        console.log(chalk.yellow(`⚠ 跳过 ${tool}：目录不存在 (${targetDir})`));
+        continue;
+      }
+
+      linker.ensureTargetDir(targetDir);
+
+      const sourcePath = skill.path;
+      const targetPath = path.join(targetDir, skill.name);
+
+      const result = linker.createSymlink(sourcePath, targetPath, skill.isDirectory);
+
+      if (result.success) {
+        if (result.skipped) {
+          console.log(chalk.gray(`⊙ ${skill.name} → ${tool}: ${result.message}`));
+        } else {
+          console.log(chalk.green(`✓ ${skill.name} → ${tool}: ${result.message}`));
+
+          // 更新配置
+          if (!cfg.skills[skill.name]) {
+            cfg.skills[skill.name] = [];
+          }
+          if (!cfg.skills[skill.name].includes(tool)) {
+            cfg.skills[skill.name].push(tool);
+          }
+        }
+      } else if (result.permission) {
+        console.log(chalk.red(`❌ ${skill.name} → ${tool}: ${result.message}`));
+        console.log(chalk.yellow('   提示：请以管理员身份运行或启用开发者模式'));
+      } else if (result.conflict) {
+        // 询问是否覆盖
+        const { overwrite } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'overwrite',
+            message: `${skill.name} → ${tool}: ${result.message}，是否覆盖？`,
+            default: false
+          }
+        ]);
+
+        if (overwrite) {
+          // 删除旧文件/目录
+          if (fs.lstatSync(targetPath).isSymbolicLink()) {
+            fs.unlinkSync(targetPath);
+          } else if (fs.statSync(targetPath).isDirectory()) {
+            fs.rmSync(targetPath, { recursive: true });
+          } else {
+            fs.unlinkSync(targetPath);
+          }
+
+          // 重新创建
+          const retryResult = linker.createSymlink(sourcePath, targetPath, skill.isDirectory);
+          if (retryResult.success) {
+            console.log(chalk.green(`✓ ${skill.name} → ${tool}: 创建成功`));
+
+            // 更新配置
+            if (!cfg.skills[skill.name]) {
+              cfg.skills[skill.name] = [];
+            }
+            if (!cfg.skills[skill.name].includes(tool)) {
+              cfg.skills[skill.name].push(tool);
+            }
+          } else {
+            console.log(chalk.red(`❌ ${skill.name} → ${tool}: ${retryResult.message}`));
+          }
+        } else {
+          console.log(chalk.gray(`⊙ ${skill.name} → ${tool}: 跳过`));
+        }
+      } else {
+        console.log(chalk.red(`❌ ${skill.name} → ${tool}: ${result.message}`));
+      }
+    }
+  }
+
+  // 保存配置
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
 }
 
 async function disableSkill(cfg) {
