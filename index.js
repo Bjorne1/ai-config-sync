@@ -414,7 +414,50 @@ async function showStatus(cfg) {
 }
 
 async function changeSourceDir(cfg) {
-  console.log(chalk.yellow('功能开发中...'));
+  console.log(chalk.gray(`\n当前源目录: ${cfg.sourceDir}\n`));
+
+  const { newSourceDir } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'newSourceDir',
+      message: '输入新的源目录路径:',
+      default: cfg.sourceDir,
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return '路径不能为空';
+        }
+        return true;
+      }
+    }
+  ]);
+
+  const normalizedPath = path.resolve(newSourceDir);
+
+  // 检查目录是否存在
+  if (!fs.existsSync(normalizedPath)) {
+    const { createDir } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'createDir',
+        message: '目录不存在，是否创建？',
+        default: true
+      }
+    ]);
+
+    if (createDir) {
+      fs.mkdirSync(normalizedPath, { recursive: true });
+      console.log(chalk.green(`\n✓ 已创建目录: ${normalizedPath}\n`));
+    } else {
+      console.log(chalk.yellow('\n操作已取消\n'));
+      return;
+    }
+  }
+
+  // 更新配置
+  cfg.sourceDir = normalizedPath;
+  config.saveConfig(cfg);
+
+  console.log(chalk.green('\n✓ 源目录已更新\n'));
 }
 
 async function syncAll(cfg) {
