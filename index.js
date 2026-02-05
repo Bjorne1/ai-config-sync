@@ -188,13 +188,13 @@ async function addSkill(cfg) {
     for (const tool of selectedTools) {
       const targetDir = targets[tool];
 
-      // 检查目标目录是否存在
-      if (!fs.existsSync(targetDir)) {
-        console.log(chalk.yellow(`⚠ 跳过 ${tool}：目录不存在 (${targetDir})`));
+      // 检查工具是否已安装
+      if (!config.isToolInstalled(tool)) {
+        console.log(chalk.yellow(`⚠ 跳过 ${tool}：工具未安装`));
         continue;
       }
 
-      linker.ensureTargetDir(targetDir);
+      linker.ensureTargetDir(targetDir, true);
 
       const sourcePath = skill.path;
       const targetPath = path.join(targetDir, skill.name);
@@ -554,14 +554,14 @@ async function syncAll(cfg) {
     for (const tool of enabledTools) {
       const targetDir = targets[tool];
 
-      // 检查目标目录是否存在
-      if (!fs.existsSync(targetDir)) {
-        console.log(chalk.yellow(`⚠ ${skillName} → ${tool}: 目标目录不存在，已跳过`));
+      // 检查工具是否已安装
+      if (!config.isToolInstalled(tool)) {
+        console.log(chalk.yellow(`⚠ ${skillName} → ${tool}: 工具未安装，已跳过`));
         skipCount++;
         continue;
       }
 
-      linker.ensureTargetDir(targetDir);
+      linker.ensureTargetDir(targetDir, true);
 
       const targetPath = path.join(targetDir, skillName);
 
