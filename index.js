@@ -127,16 +127,18 @@ async function addSkill(cfg) {
     {
       type: 'checkbox',
       name: 'selectedSkills',
-      message: '选择要启用的 Skills:',
-      choices: skills.map(s => ({
-        name: `${s.name}${s.isDirectory ? ' (目录)' : ''}`,
-        value: s
-      }))
+      message: '选择要启用的 Skills (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 可用 Skills ──'),
+        ...skills.map(s => ({
+          name: `${s.name}${s.isDirectory ? ' (目录)' : ''}`,
+          value: s
+        }))
+      ]
     }
   ]);
 
   if (selectedSkills.length === 0) {
-    console.log(chalk.yellow('\n未选择任何 Skill\n'));
     return;
   }
 
@@ -148,17 +150,19 @@ async function addSkill(cfg) {
     {
       type: 'checkbox',
       name: 'selectedTools',
-      message: '选择要启用到的工具:',
-      choices: toolNames.map(tool => ({
-        name: tool,
-        value: tool,
-        checked: true // 默认全选
-      }))
+      message: '选择要启用到的工具 (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 可用工具 ──'),
+        ...toolNames.map(tool => ({
+          name: tool,
+          value: tool,
+          checked: true // 默认全选
+        }))
+      ]
     }
   ]);
 
   if (selectedTools.length === 0) {
-    console.log(chalk.yellow('\n未选择任何工具\n'));
     return;
   }
 
@@ -263,9 +267,17 @@ async function disableSkill(cfg) {
       type: 'list',
       name: 'skillName',
       message: '选择要禁用的 Skill:',
-      choices: enabledSkills
+      choices: [
+        { name: '← 返回主菜单', value: '__back__' },
+        new inquirer.Separator('── 已启用 Skills ──'),
+        ...enabledSkills
+      ]
     }
   ]);
+
+  if (skillName === '__back__') {
+    return;
+  }
 
   const enabledTools = cfg.skills[skillName];
 
@@ -279,17 +291,19 @@ async function disableSkill(cfg) {
     {
       type: 'checkbox',
       name: 'selectedTools',
-      message: '选择要禁用的工具:',
-      choices: enabledTools.map(tool => ({
-        name: tool,
-        value: tool,
-        checked: true
-      }))
+      message: '选择要禁用的工具 (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 已启用工具 ──'),
+        ...enabledTools.map(tool => ({
+          name: tool,
+          value: tool,
+          checked: true
+        }))
+      ]
     }
   ]);
 
   if (selectedTools.length === 0) {
-    console.log(chalk.yellow('\n未选择任何工具\n'));
     return;
   }
 
@@ -340,13 +354,16 @@ async function removeSkill(cfg) {
     {
       type: 'checkbox',
       name: 'selectedSkills',
-      message: '选择要移除的 Skills (仅删除链接，不删除源文件):',
-      choices: enabledSkills
+      message: '选择要移除的 Skills (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 已启用 Skills ──'),
+        ...enabledSkills
+      ]
     }
   ]);
 
   if (selectedSkills.length === 0) {
-    console.log(chalk.yellow('\n未选择任何 Skill\n'));
+    return;
     return;
   }
 
