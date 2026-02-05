@@ -7,6 +7,22 @@ const config = require('./lib/config');
 const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
 
+function isWindows() {
+  return process.platform === 'win32';
+}
+
+const PERMISSION_HINTS = {
+  windows: [
+    '1. 以管理员身份运行',
+    '2. 或在 Windows 设置中启用开发者模式',
+    '   设置 → 更新和安全 → 开发者选项 → 开发人员模式'
+  ],
+  linux: [
+    '1. 检查目标目录的写入权限',
+    '2. 或使用 sudo 运行程序'
+  ]
+};
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -18,9 +34,9 @@ async function main() {
   if (!permCheck.hasPermission) {
     console.log(chalk.red('❌ 创建软链接失败：权限不足\n'));
     console.log(chalk.yellow('解决方案：'));
-    console.log('1. 以管理员身份运行');
-    console.log('2. 或在 Windows 设置中启用开发者模式');
-    console.log('   设置 → 更新和安全 → 开发者选项 → 开发人员模式\n');
+    const hints = isWindows() ? PERMISSION_HINTS.windows : PERMISSION_HINTS.linux;
+    hints.forEach(hint => console.log(hint));
+    console.log();
     process.exit(1);
   }
 
