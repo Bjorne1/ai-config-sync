@@ -61,6 +61,10 @@ async function main() {
         await syncAll(cfg);
         process.exit(0);
         break;
+      case 'sync-commands':
+        await syncCommands(cfg);
+        process.exit(0);
+        break;
       case 'validate':
         await validateLinks(cfg);
         process.exit(0);
@@ -68,10 +72,11 @@ async function main() {
       default:
         console.log(chalk.red(`未知命令: ${command}\n`));
         console.log('可用命令:');
-        console.log('  node index.js          - 启动交互式菜单');
-        console.log('  node index.js status   - 查看状态');
-        console.log('  node index.js sync     - 同步所有');
-        console.log('  node index.js validate - 验证链接\n');
+        console.log('  node index.js              - 启动交互式菜单');
+        console.log('  node index.js status       - 查看状态');
+        console.log('  node index.js sync         - 同步所有 Skills');
+        console.log('  node index.js sync-commands- 同步所有 Commands');
+        console.log('  node index.js validate     - 验证链接\n');
         process.exit(1);
     }
   }
@@ -82,12 +87,19 @@ async function main() {
 
 async function showMenu(cfg) {
   const choices = [
+    new inquirer.Separator('── Skills ──'),
     { name: '添加/启用 Skill', value: 'add' },
     { name: '禁用 Skill', value: 'disable' },
     { name: '移除 Skill', value: 'remove' },
+    { name: '同步所有 Skills', value: 'sync' },
+    new inquirer.Separator('── Commands ──'),
+    { name: '添加/启用 Command', value: 'add-command' },
+    { name: '禁用 Command', value: 'disable-command' },
+    { name: '移除 Command', value: 'remove-command' },
+    { name: '同步所有 Commands', value: 'sync-commands' },
+    new inquirer.Separator('── 其他 ──'),
     { name: '查看当前状态', value: 'status' },
     { name: '修改源目录', value: 'change-source' },
-    { name: '同步所有 Skill', value: 'sync' },
     { name: '退出', value: 'exit' }
   ];
 
@@ -109,6 +121,18 @@ async function showMenu(cfg) {
       break;
     case 'remove':
       await removeSkill(cfg);
+      break;
+    case 'add-command':
+      await addCommand(cfg);
+      break;
+    case 'disable-command':
+      await disableCommand(cfg);
+      break;
+    case 'remove-command':
+      await removeCommand(cfg);
+      break;
+    case 'sync-commands':
+      await syncCommands(cfg);
       break;
     case 'status':
       await showStatus(cfg);
@@ -473,6 +497,9 @@ async function showStatus(cfg) {
 
   console.log(table.toString());
   console.log();
+
+  // 同时显示 Commands 状态
+  await showCommandStatus(cfg);
 }
 
 async function changeSourceDir(cfg) {
@@ -612,6 +639,406 @@ async function syncAll(cfg) {
   if (skipCount > 0) {
     console.log(chalk.yellow(`  跳过: ${skipCount}`));
   }
+  console.log();
+}
+
+async function addCommand(cfg) {
+  const sourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  const commands = scanner.scanCommands(sourceDir);
+
+  if (commands.length === 0) {
+    console.log(chalk.yellow('\nCommands 源目录为空，请先添加 .md 文件\n'));
+    return;
+  }
+
+  const { selectedCommands } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedCommands',
+      message: '选择要启用的 Commands (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 可用 Commands ──'),
+        ...commands.map(c => ({
+          name: c.isDirectory ? `${c.name}/ (${c.children.length} 个文件)` : c.name,
+          value: c
+        }))
+      ]
+    }
+  ]);
+
+  if (selectedCommands.length === 0) return;
+
+  const targets = config.getCommandTargets(cfg);
+  const toolNames = Object.keys(targets);
+
+  const { selectedTools } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedTools',
+      message: '选择要启用到的工具 (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 可用工具 ──'),
+        ...toolNames.map(tool => ({ name: tool, value: tool, checked: true }))
+      ]
+    }
+  ]);
+
+  if (selectedTools.length === 0) return;
+
+  console.log();
+  for (const cmd of selectedCommands) {
+    for (const tool of selectedTools) {
+      if (!config.isToolInstalled(tool)) {
+        console.log(chalk.yellow(`⚠ 跳过 ${tool}：工具未安装`));
+        continue;
+      }
+
+      const targetDir = targets[tool];
+      linker.ensureTargetDir(targetDir, true);
+
+      const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+      const expanded = scanner.expandCommandsForTool([cmd], tool, subfolderSupport);
+
+      for (const item of expanded) {
+        const targetPath = path.join(targetDir, item.name);
+        const result = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+
+        if (result.success) {
+          if (result.skipped) {
+            console.log(chalk.gray(`⊙ ${item.name} → ${tool}: ${result.message}`));
+          } else {
+            console.log(chalk.green(`✓ ${item.name} → ${tool}: ${result.message}`));
+          }
+        } else if (result.conflict) {
+          const { overwrite } = await inquirer.prompt([
+            { type: 'confirm', name: 'overwrite', message: `${item.name} → ${tool}: ${result.message}，是否覆盖？`, default: false }
+          ]);
+          if (overwrite) {
+            const stats = fs.lstatSync(targetPath);
+            if (stats.isSymbolicLink()) fs.unlinkSync(targetPath);
+            else if (stats.isDirectory()) fs.rmSync(targetPath, { recursive: true });
+            else fs.unlinkSync(targetPath);
+
+            const retryResult = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+            if (retryResult.success) {
+              console.log(chalk.green(`✓ ${item.name} → ${tool}: 创建成功`));
+            } else {
+              console.log(chalk.red(`❌ ${item.name} → ${tool}: ${retryResult.message}`));
+            }
+          } else {
+            console.log(chalk.gray(`⊙ ${item.name} → ${tool}: 跳过`));
+          }
+        } else {
+          console.log(chalk.red(`❌ ${item.name} → ${tool}: ${result.message}`));
+        }
+      }
+
+      if (!cfg.commands) cfg.commands = {};
+      if (!cfg.commands[cmd.name]) cfg.commands[cmd.name] = [];
+      if (!cfg.commands[cmd.name].includes(tool)) cfg.commands[cmd.name].push(tool);
+    }
+  }
+
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
+}
+
+async function disableCommand(cfg) {
+  const enabledCommands = Object.keys(cfg.commands || {});
+
+  if (enabledCommands.length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Command\n'));
+    return;
+  }
+
+  const { cmdName } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'cmdName',
+      message: '选择要禁用的 Command:',
+      choices: [
+        { name: '← 返回主菜单', value: '__back__' },
+        new inquirer.Separator('── 已启用 Commands ──'),
+        ...enabledCommands
+      ]
+    }
+  ]);
+
+  if (cmdName === '__back__') return;
+
+  const enabledTools = cfg.commands[cmdName];
+  if (!enabledTools || enabledTools.length === 0) {
+    console.log(chalk.yellow('\n该 Command 未启用到任何工具\n'));
+    return;
+  }
+
+  const { selectedTools } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedTools',
+      message: '选择要禁用的工具 (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 已启用工具 ──'),
+        ...enabledTools.map(tool => ({ name: tool, value: tool, checked: true }))
+      ]
+    }
+  ]);
+
+  if (selectedTools.length === 0) return;
+
+  const targets = config.getCommandTargets(cfg);
+  const sourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  const commands = scanner.scanCommands(sourceDir);
+  const cmd = commands.find(c => c.name === cmdName);
+
+  console.log();
+  for (const tool of selectedTools) {
+    const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+
+    if (cmd && cmd.isDirectory && !subfolderSupport) {
+      const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+      for (const item of expanded) {
+        const targetPath = path.join(targets[tool], item.name);
+        const result = linker.removeSymlink(targetPath);
+        if (result.success) {
+          console.log(chalk.green(`✓ ${item.name} → ${tool}: ${result.message}`));
+        } else {
+          console.log(chalk.red(`❌ ${item.name} → ${tool}: ${result.message}`));
+        }
+      }
+    } else {
+      const targetPath = path.join(targets[tool], cmdName);
+      const result = linker.removeSymlink(targetPath);
+      if (result.success) {
+        if (result.skipped) {
+          console.log(chalk.gray(`⊙ ${cmdName} → ${tool}: ${result.message}`));
+        } else {
+          console.log(chalk.green(`✓ ${cmdName} → ${tool}: ${result.message}`));
+        }
+      } else {
+        console.log(chalk.red(`❌ ${cmdName} → ${tool}: ${result.message}`));
+      }
+    }
+
+    cfg.commands[cmdName] = cfg.commands[cmdName].filter(t => t !== tool);
+  }
+
+  if (cfg.commands[cmdName].length === 0) delete cfg.commands[cmdName];
+
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
+}
+
+async function removeCommand(cfg) {
+  const enabledCommands = Object.keys(cfg.commands || {});
+
+  if (enabledCommands.length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Command\n'));
+    return;
+  }
+
+  const { selectedCommands } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selectedCommands',
+      message: '选择要移除的 Commands (直接回车返回主菜单):',
+      choices: [
+        new inquirer.Separator('── 已启用 Commands ──'),
+        ...enabledCommands
+      ]
+    }
+  ]);
+
+  if (selectedCommands.length === 0) return;
+
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: `确认从所有工具移除 ${selectedCommands.length} 个 Command？`,
+      default: false
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('\n操作已取消\n'));
+    return;
+  }
+
+  const targets = config.getCommandTargets(cfg);
+  const sourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  const commands = scanner.scanCommands(sourceDir);
+
+  console.log();
+  for (const cmdName of selectedCommands) {
+    const enabledTools = cfg.commands[cmdName] || [];
+    const cmd = commands.find(c => c.name === cmdName);
+
+    for (const tool of enabledTools) {
+      const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+
+      if (cmd && cmd.isDirectory && !subfolderSupport) {
+        const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+        for (const item of expanded) {
+          const targetPath = path.join(targets[tool], item.name);
+          const result = linker.removeSymlink(targetPath);
+          if (result.success) {
+            console.log(chalk.green(`✓ ${item.name} → ${tool}: ${result.message}`));
+          } else {
+            console.log(chalk.red(`❌ ${item.name} → ${tool}: ${result.message}`));
+          }
+        }
+      } else {
+        const targetPath = path.join(targets[tool], cmdName);
+        const result = linker.removeSymlink(targetPath);
+        if (result.success) {
+          console.log(chalk.green(`✓ ${cmdName} → ${tool}: ${result.message}`));
+        } else {
+          console.log(chalk.red(`❌ ${cmdName} → ${tool}: ${result.message}`));
+        }
+      }
+    }
+
+    delete cfg.commands[cmdName];
+  }
+
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 配置已保存\n'));
+}
+
+async function syncCommands(cfg) {
+  console.log(chalk.cyan('\n🔄 开始同步所有 Commands...\n'));
+
+  const enabledCommands = Object.keys(cfg.commands || {});
+
+  if (enabledCommands.length === 0) {
+    console.log(chalk.yellow('暂无已启用的 Command\n'));
+    return;
+  }
+
+  const targets = config.getCommandTargets(cfg);
+  const sourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  const commands = scanner.scanCommands(sourceDir);
+
+  let successCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+
+  for (const cmdName of enabledCommands) {
+    const enabledTools = cfg.commands[cmdName];
+    const cmd = commands.find(c => c.name === cmdName);
+
+    if (!cmd) {
+      console.log(chalk.red(`✗ ${cmdName}: 源文件不存在，已跳过`));
+      skipCount++;
+      continue;
+    }
+
+    for (const tool of enabledTools) {
+      if (!config.isToolInstalled(tool)) {
+        console.log(chalk.yellow(`⚠ ${cmdName} → ${tool}: 工具未安装，已跳过`));
+        skipCount++;
+        continue;
+      }
+
+      const targetDir = targets[tool];
+      linker.ensureTargetDir(targetDir, true);
+
+      const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+      const expanded = scanner.expandCommandsForTool([cmd], tool, subfolderSupport);
+
+      for (const item of expanded) {
+        const targetPath = path.join(targetDir, item.name);
+
+        if (linker.isValidSymlink(targetPath, item.sourcePath)) {
+          console.log(chalk.gray(`⊙ ${item.name} → ${tool}: 链接有效`));
+          successCount++;
+          continue;
+        }
+
+        if (fs.existsSync(targetPath)) {
+          try {
+            const stats = fs.lstatSync(targetPath);
+            if (stats.isSymbolicLink()) fs.unlinkSync(targetPath);
+            else if (stats.isDirectory()) fs.rmSync(targetPath, { recursive: true });
+            else fs.unlinkSync(targetPath);
+          } catch (error) {
+            console.log(chalk.red(`✗ ${item.name} → ${tool}: 清理失败 - ${error.message}`));
+            failCount++;
+            continue;
+          }
+        }
+
+        const result = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+        if (result.success) {
+          console.log(chalk.green(`✓ ${item.name} → ${tool}: 修复成功`));
+          successCount++;
+        } else {
+          console.log(chalk.red(`✗ ${item.name} → ${tool}: ${result.message}`));
+          failCount++;
+        }
+      }
+    }
+  }
+
+  console.log(chalk.cyan('\n同步完成：'));
+  console.log(`✓ ${successCount} 成功 | ✗ ${failCount} 失败 | ⚠ ${skipCount} 跳过`);
+  console.log();
+}
+
+async function showCommandStatus(cfg) {
+  console.log(chalk.cyan('\n📊 Commands 状态：\n'));
+
+  const sourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  console.log(chalk.gray(`Commands 源目录: ${sourceDir}`));
+
+  if (!cfg.commands || Object.keys(cfg.commands).length === 0) {
+    console.log(chalk.yellow('\n暂无已启用的 Command\n'));
+    return;
+  }
+
+  const targets = config.getCommandTargets(cfg);
+  const toolNames = Object.keys(targets);
+  const commands = scanner.scanCommands(sourceDir);
+
+  const table = new Table({
+    head: ['Command', ...toolNames],
+    style: { head: ['cyan'] }
+  });
+
+  Object.keys(cfg.commands).forEach(cmdName => {
+    const enabledTools = cfg.commands[cmdName];
+    const cmd = commands.find(c => c.name === cmdName);
+    const row = [cmdName];
+
+    toolNames.forEach(tool => {
+      if (!enabledTools.includes(tool)) {
+        row.push(chalk.gray('-'));
+        return;
+      }
+
+      const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+      let valid = true;
+
+      if (cmd && cmd.isDirectory && !subfolderSupport) {
+        const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+        valid = expanded.every(item => {
+          const targetPath = path.join(targets[tool], item.name);
+          return linker.isValidSymlink(targetPath, item.sourcePath);
+        });
+      } else {
+        const targetPath = path.join(targets[tool], cmdName);
+        const sourcePath = cmd ? cmd.path : path.join(sourceDir, cmdName);
+        valid = linker.isValidSymlink(targetPath, sourcePath);
+      }
+
+      row.push(valid ? chalk.green('✓') : chalk.red('✗'));
+    });
+
+    table.push(row);
+  });
+
+  console.log(table.toString());
   console.log();
 }
 
