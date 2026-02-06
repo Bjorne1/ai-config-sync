@@ -6,6 +6,7 @@ const fs = require('fs');
 const config = require('./lib/config');
 const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
+const updater = require('./lib/updater');
 
 function isWindows() {
   return process.platform === 'win32';
@@ -97,6 +98,9 @@ async function showMenu(cfg) {
     { name: '禁用 Command', value: 'disable-command' },
     { name: '移除 Command', value: 'remove-command' },
     { name: '同步所有 Commands', value: 'sync-commands' },
+    new inquirer.Separator('── 工具更新 ──'),
+    { name: '一键更新所有工具', value: 'update-tools' },
+    { name: '管理更新工具列表', value: 'manage-update-tools' },
     new inquirer.Separator('── 其他 ──'),
     { name: '查看当前状态', value: 'status' },
     { name: '修改源目录', value: 'change-source' },
@@ -133,6 +137,12 @@ async function showMenu(cfg) {
       break;
     case 'sync-commands':
       await syncCommands(cfg);
+      break;
+    case 'update-tools':
+      await updateAllToolsMenu(cfg);
+      break;
+    case 'manage-update-tools':
+      await manageUpdateTools(cfg);
       break;
     case 'status':
       await showStatus(cfg);
@@ -1081,6 +1091,171 @@ async function validateLinks(cfg) {
     console.log(chalk.yellow('\n提示: 运行 "node index.js sync" 修复损坏的链接'));
   }
   console.log();
+}
+
+async function updateAllToolsMenu(cfg) {
+  console.log(chalk.cyan('\n🔄 开始更新所有工具...\n'));
+
+  const tools = config.getUpdateTools(cfg);
+  const entries = Object.entries(tools);
+
+  if (entries.length === 0) {
+    console.log(chalk.yellow('未配置任何更新工具\n'));
+    return;
+  }
+
+  const results = await updater.updateAllTools(tools, (name, current, total) => {
+    console.log(chalk.cyan(`\n[${current}/${total}] 正在更新 ${name}...`));
+  });
+
+  console.log(chalk.cyan('\n\n📊 更新结果：\n'));
+
+  const table = new Table({
+    head: ['工具', '更新前', '更新后', '状态'],
+    style: { head: ['cyan'] }
+  });
+
+  results.forEach(r => {
+    const before = r.versionBefore || '-';
+    const after = r.versionAfter || '-';
+    const status = r.success ? chalk.green('✓ 成功') : chalk.red('✗ 失败');
+    table.push([r.name, before, after, status]);
+  });
+
+  console.log(table.toString());
+  console.log();
+}
+
+async function manageUpdateTools(cfg) {
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: '管理更新工具:',
+      choices: [
+        { name: '查看当前配置', value: 'list' },
+        { name: '添加工具', value: 'add' },
+        { name: '删除工具', value: 'remove' },
+        { name: '返回主菜单', value: 'back' }
+      ]
+    }
+  ]);
+
+  switch (action) {
+    case 'list':
+      await listUpdateTools(cfg);
+      break;
+    case 'add':
+      await addUpdateTool(cfg);
+      break;
+    case 'remove':
+      await removeUpdateTool(cfg);
+      break;
+  }
+}
+
+async function listUpdateTools(cfg) {
+  const tools = config.getUpdateTools(cfg);
+  const entries = Object.entries(tools);
+
+  if (entries.length === 0) {
+    console.log(chalk.yellow('\n未配置任何更新工具\n'));
+    return;
+  }
+
+  console.log(chalk.cyan('\n📋 当前更新工具配置：\n'));
+
+  const table = new Table({
+    head: ['工具名称', '类型', '配置'],
+    style: { head: ['cyan'] }
+  });
+
+  entries.forEach(([name, cfg]) => {
+    const detail = cfg.type === 'npm' ? cfg.package : cfg.command;
+    table.push([name, cfg.type, detail]);
+  });
+
+  console.log(table.toString());
+  console.log();
+}
+
+async function addUpdateTool(cfg) {
+  const { name } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'name',
+      message: '工具显示名称:',
+      validate: input => input.trim() ? true : '请输入名称'
+    }
+  ]);
+
+  const { type } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'type',
+      message: '更新类型:',
+      choices: [
+        { name: 'npm (npm update -g)', value: 'npm' },
+        { name: '自定义命令', value: 'custom' }
+      ]
+    }
+  ]);
+
+  let toolConfig;
+  if (type === 'npm') {
+    const { pkg } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'pkg',
+        message: 'npm 包名 (如 @openai/codex):',
+        validate: input => input.trim() ? true : '请输入包名'
+      }
+    ]);
+    toolConfig = { type: 'npm', package: pkg.trim() };
+  } else {
+    const { command } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'command',
+        message: '更新命令 (如 claude update):',
+        validate: input => input.trim() ? true : '请输入命令'
+      }
+    ]);
+    toolConfig = { type: 'custom', command: command.trim() };
+  }
+
+  const tools = { ...config.getUpdateTools(cfg) };
+  tools[name.trim()] = toolConfig;
+  config.setUpdateTools(cfg, tools);
+
+  console.log(chalk.green(`\n✓ 已添加工具: ${name}\n`));
+}
+
+async function removeUpdateTool(cfg) {
+  const tools = config.getUpdateTools(cfg);
+  const names = Object.keys(tools);
+
+  if (names.length === 0) {
+    console.log(chalk.yellow('\n未配置任何更新工具\n'));
+    return;
+  }
+
+  const { selected } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selected',
+      message: '选择要删除的工具:',
+      choices: names
+    }
+  ]);
+
+  if (selected.length === 0) return;
+
+  const newTools = { ...tools };
+  selected.forEach(name => delete newTools[name]);
+  config.setUpdateTools(cfg, newTools);
+
+  console.log(chalk.green(`\n✓ 已删除 ${selected.length} 个工具\n`));
 }
 
 // 启动
