@@ -171,5 +171,11 @@
       "type": "npm",
       "package": "@fission-ai/openspec"
     }
+  },
+  "git": {
+    "projectDirs": [
+      "~/projects"
+    ],
+    "exclude": []
   }
 }

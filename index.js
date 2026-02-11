@@ -7,6 +7,7 @@ const config = require('./lib/config');
 const scanner = require('./lib/scanner');
 const linker = require('./lib/linker');
 const updater = require('./lib/updater');
+const git = require('./lib/git');
 
 function isWindows() {
   return process.platform === 'win32';
@@ -70,6 +71,18 @@ async function main() {
         await validateLinks(cfg);
         process.exit(0);
         break;
+      case 'git-pull':
+        await gitPullAll(cfg);
+        process.exit(0);
+        break;
+      case 'git-push':
+        await gitPushAll(cfg);
+        process.exit(0);
+        break;
+      case 'git-status':
+        await gitStatusAll(cfg);
+        process.exit(0);
+        break;
       default:
         console.log(chalk.red(`未知命令: ${command}\n`));
         console.log('可用命令:');
@@ -77,7 +90,10 @@ async function main() {
         console.log('  node index.js status       - 查看状态');
         console.log('  node index.js sync         - 同步所有 Skills');
         console.log('  node index.js sync-commands- 同步所有 Commands');
-        console.log('  node index.js validate     - 验证链接\n');
+        console.log('  node index.js validate     - 验证链接');
+        console.log('  node index.js git-pull     - 批量 Git Pull');
+        console.log('  node index.js git-push     - 批量 Git Push');
+        console.log('  node index.js git-status   - 查看仓库状态\n');
         process.exit(1);
     }
   }
@@ -101,6 +117,11 @@ async function showMenu(cfg) {
     new inquirer.Separator('── 工具更新 ──'),
     { name: '一键更新所有工具', value: 'update-tools' },
     { name: '管理更新工具列表', value: 'manage-update-tools' },
+    new inquirer.Separator('── Git 操作 ──'),
+    { name: '批量 Git Pull', value: 'git-pull' },
+    { name: '批量 Git Push', value: 'git-push' },
+    { name: '查看仓库状态', value: 'git-status' },
+    { name: '配置 Projects 目录', value: 'git-config' },
     new inquirer.Separator('── 其他 ──'),
     { name: '查看当前状态', value: 'status' },
     { name: '清理无效配置', value: 'cleanup' },
@@ -144,6 +165,18 @@ async function showMenu(cfg) {
       break;
     case 'manage-update-tools':
       await manageUpdateTools(cfg);
+      break;
+    case 'git-pull':
+      await gitPullAll(cfg);
+      break;
+    case 'git-push':
+      await gitPushAll(cfg);
+      break;
+    case 'git-status':
+      await gitStatusAll(cfg);
+      break;
+    case 'git-config':
+      await manageGitConfig(cfg);
       break;
     case 'status':
       await showStatus(cfg);
@@ -1439,6 +1472,340 @@ async function removeUpdateTool(cfg) {
   config.setUpdateTools(cfg, newTools);
 
   console.log(chalk.green(`\n✓ 已删除 ${selected.length} 个工具\n`));
+}
+
+async function gitPullAll(cfg) {
+  const gitConfig = config.getGitConfig(cfg);
+
+  if (gitConfig.projectDirs.length === 0) {
+    console.log(chalk.yellow('\n未配置 Projects 目录，请先通过菜单 "配置 Projects 目录" 添加\n'));
+    return;
+  }
+
+  console.log(chalk.cyan('\n🔍 扫描 Git 仓库...\n'));
+
+  const repos = git.scanGitRepos(gitConfig.projectDirs, gitConfig.exclude);
+
+  if (repos.length === 0) {
+    console.log(chalk.yellow('未找到 Git 仓库\n'));
+    return;
+  }
+
+  // 预览列表
+  const table = new Table({
+    head: ['仓库', '分支', '状态', 'Behind'],
+    style: { head: ['cyan'] }
+  });
+
+  const repoStatuses = repos.map(repo => {
+    const status = git.getRepoStatus(repo.path);
+    return { ...repo, status };
+  });
+
+  repoStatuses.forEach(({ name, status }) => {
+    const dirty = status.isDirty ? chalk.yellow('dirty') : chalk.green('clean');
+    const behind = status.behind > 0 ? chalk.yellow(String(status.behind)) : chalk.gray('0');
+    table.push([name, status.branch, dirty, behind]);
+  });
+
+  console.log(table.toString());
+
+  const pullable = repoStatuses.filter(r => r.status.hasRemote && !r.status.isDirty && r.status.behind > 0);
+
+  if (pullable.length === 0) {
+    console.log(chalk.green('\n✓ 所有仓库已是最新（或因 dirty/无远程 跳过）\n'));
+    return;
+  }
+
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: `确认对 ${repos.length} 个仓库执行 git pull --ff-only？`,
+      default: true
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('\n操作已取消\n'));
+    return;
+  }
+
+  const results = await git.pullAll(repos, (name, current, total) => {
+    console.log(chalk.cyan(`[${current}/${total}] ${name}...`));
+  });
+
+  // 结果表格
+  console.log(chalk.cyan('\n📊 Pull 结果：\n'));
+
+  const resultTable = new Table({
+    head: ['仓库', '状态', '信息'],
+    style: { head: ['cyan'] }
+  });
+
+  results.forEach(r => {
+    const status = r.success
+      ? (r.skipped ? chalk.gray('⊙ 跳过') : chalk.green('✓ 成功'))
+      : chalk.red('✗ 失败');
+    resultTable.push([r.name, status, r.message]);
+  });
+
+  console.log(resultTable.toString());
+  console.log();
+}
+
+async function gitPushAll(cfg) {
+  const gitConfig = config.getGitConfig(cfg);
+
+  if (gitConfig.projectDirs.length === 0) {
+    console.log(chalk.yellow('\n未配置 Projects 目录，请先通过菜单 "配置 Projects 目录" 添加\n'));
+    return;
+  }
+
+  console.log(chalk.cyan('\n🔍 扫描 Git 仓库...\n'));
+
+  const repos = git.scanGitRepos(gitConfig.projectDirs, gitConfig.exclude);
+
+  if (repos.length === 0) {
+    console.log(chalk.yellow('未找到 Git 仓库\n'));
+    return;
+  }
+
+  // 预览列表
+  const table = new Table({
+    head: ['仓库', '分支', '状态', 'Ahead'],
+    style: { head: ['cyan'] }
+  });
+
+  const repoStatuses = repos.map(repo => {
+    const status = git.getRepoStatus(repo.path);
+    return { ...repo, status };
+  });
+
+  repoStatuses.forEach(({ name, status }) => {
+    const dirty = status.isDirty ? chalk.yellow('dirty') : chalk.green('clean');
+    const ahead = status.ahead > 0 ? chalk.yellow(String(status.ahead)) : chalk.gray('0');
+    table.push([name, status.branch, dirty, ahead]);
+  });
+
+  console.log(table.toString());
+
+  const pushable = repoStatuses.filter(r => r.status.hasRemote && r.status.ahead > 0);
+
+  if (pushable.length === 0) {
+    console.log(chalk.green('\n✓ 所有仓库无需推送\n'));
+    return;
+  }
+
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: `确认对 ${repos.length} 个仓库执行 git push？`,
+      default: true
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('\n操作已取消\n'));
+    return;
+  }
+
+  const results = await git.pushAll(repos, (name, current, total) => {
+    console.log(chalk.cyan(`[${current}/${total}] ${name}...`));
+  });
+
+  // 结果表格
+  console.log(chalk.cyan('\n📊 Push 结果：\n'));
+
+  const resultTable = new Table({
+    head: ['仓库', '状态', '信息'],
+    style: { head: ['cyan'] }
+  });
+
+  results.forEach(r => {
+    const status = r.success
+      ? (r.skipped ? chalk.gray('⊙ 跳过') : chalk.green('✓ 成功'))
+      : chalk.red('✗ 失败');
+    resultTable.push([r.name, status, r.message]);
+  });
+
+  console.log(resultTable.toString());
+  console.log();
+}
+
+async function gitStatusAll(cfg) {
+  const gitConfig = config.getGitConfig(cfg);
+
+  if (gitConfig.projectDirs.length === 0) {
+    console.log(chalk.yellow('\n未配置 Projects 目录，请先通过菜单 "配置 Projects 目录" 添加\n'));
+    return;
+  }
+
+  console.log(chalk.cyan('\n🔍 扫描 Git 仓库...\n'));
+
+  const repos = git.scanGitRepos(gitConfig.projectDirs, gitConfig.exclude);
+
+  if (repos.length === 0) {
+    console.log(chalk.yellow('未找到 Git 仓库\n'));
+    return;
+  }
+
+  const table = new Table({
+    head: ['仓库', '分支', '状态', 'Remote', 'Ahead', 'Behind'],
+    style: { head: ['cyan'] }
+  });
+
+  repos.forEach(repo => {
+    const status = git.getRepoStatus(repo.path);
+    const dirty = status.isDirty ? chalk.yellow('dirty') : chalk.green('clean');
+    const remote = status.hasRemote ? chalk.green('✓') : chalk.gray('✗');
+    const ahead = status.ahead > 0 ? chalk.yellow(String(status.ahead)) : chalk.gray('0');
+    const behind = status.behind > 0 ? chalk.yellow(String(status.behind)) : chalk.gray('0');
+    table.push([repo.name, status.branch, dirty, remote, ahead, behind]);
+  });
+
+  console.log(table.toString());
+  console.log(chalk.gray(`\n共 ${repos.length} 个仓库\n`));
+}
+
+async function manageGitConfig(cfg) {
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: '配置 Projects 目录:',
+      choices: [
+        { name: '查看当前配置', value: 'list' },
+        { name: '添加目录', value: 'add' },
+        { name: '删除目录', value: 'remove' },
+        { name: '管理排除列表', value: 'exclude' },
+        { name: '返回主菜单', value: 'back' }
+      ]
+    }
+  ]);
+
+  const gitConfig = config.getGitConfig(cfg);
+
+  switch (action) {
+    case 'list': {
+      console.log(chalk.cyan('\n📋 Git 配置：\n'));
+      if (gitConfig.projectDirs.length === 0) {
+        console.log(chalk.yellow('  Projects 目录: (未配置)'));
+      } else {
+        console.log('  Projects 目录:');
+        gitConfig.projectDirs.forEach(dir => console.log(chalk.gray(`    - ${dir}`)));
+      }
+      if (gitConfig.exclude.length > 0) {
+        console.log('  排除列表:');
+        gitConfig.exclude.forEach(name => console.log(chalk.gray(`    - ${name}`)));
+      }
+      console.log();
+      break;
+    }
+    case 'add': {
+      const { dir } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'dir',
+          message: '输入 Projects 目录路径 (支持 ~):',
+          validate: input => input.trim() ? true : '路径不能为空'
+        }
+      ]);
+      const absDir = git.expandHome(dir.trim());
+      if (!fs.existsSync(absDir)) {
+        console.log(chalk.red(`\n✗ 目录不存在: ${absDir}\n`));
+        break;
+      }
+      if (gitConfig.projectDirs.includes(dir.trim())) {
+        console.log(chalk.yellow(`\n⚠ 目录已存在\n`));
+        break;
+      }
+      gitConfig.projectDirs.push(dir.trim());
+      config.setGitConfig(cfg, gitConfig);
+      console.log(chalk.green(`\n✓ 已添加: ${dir.trim()}\n`));
+      break;
+    }
+    case 'remove': {
+      if (gitConfig.projectDirs.length === 0) {
+        console.log(chalk.yellow('\n未配置任何目录\n'));
+        break;
+      }
+      const { selected } = await inquirer.prompt([
+        {
+          type: 'checkbox',
+          name: 'selected',
+          message: '选择要删除的目录:',
+          choices: gitConfig.projectDirs
+        }
+      ]);
+      if (selected.length === 0) break;
+      gitConfig.projectDirs = gitConfig.projectDirs.filter(d => !selected.includes(d));
+      config.setGitConfig(cfg, gitConfig);
+      console.log(chalk.green(`\n✓ 已删除 ${selected.length} 个目录\n`));
+      break;
+    }
+    case 'exclude': {
+      const { excludeAction } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'excludeAction',
+          message: '管理排除列表:',
+          choices: [
+            { name: '查看排除列表', value: 'list' },
+            { name: '添加排除项', value: 'add' },
+            { name: '删除排除项', value: 'remove' },
+            { name: '返回', value: 'back' }
+          ]
+        }
+      ]);
+
+      if (excludeAction === 'list') {
+        if (gitConfig.exclude.length === 0) {
+          console.log(chalk.yellow('\n排除列表为空\n'));
+        } else {
+          console.log(chalk.cyan('\n排除列表：'));
+          gitConfig.exclude.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+          console.log();
+        }
+      } else if (excludeAction === 'add') {
+        const { name } = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'name',
+            message: '输入要排除的仓库名称:',
+            validate: input => input.trim() ? true : '名称不能为空'
+          }
+        ]);
+        if (!gitConfig.exclude.includes(name.trim())) {
+          gitConfig.exclude.push(name.trim());
+          config.setGitConfig(cfg, gitConfig);
+          console.log(chalk.green(`\n✓ 已添加排除: ${name.trim()}\n`));
+        } else {
+          console.log(chalk.yellow('\n⚠ 已存在\n'));
+        }
+      } else if (excludeAction === 'remove') {
+        if (gitConfig.exclude.length === 0) {
+          console.log(chalk.yellow('\n排除列表为空\n'));
+        } else {
+          const { selected } = await inquirer.prompt([
+            {
+              type: 'checkbox',
+              name: 'selected',
+              message: '选择要移除的排除项:',
+              choices: gitConfig.exclude
+            }
+          ]);
+          if (selected.length > 0) {
+            gitConfig.exclude = gitConfig.exclude.filter(n => !selected.includes(n));
+            config.setGitConfig(cfg, gitConfig);
+            console.log(chalk.green(`\n✓ 已移除 ${selected.length} 个排除项\n`));
+          }
+        }
+      }
+      break;
+    }
+  }
 }
 
 // 启动

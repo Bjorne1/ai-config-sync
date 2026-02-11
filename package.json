@@ -8,6 +8,9 @@
     "status": "node index.js status",
     "sync": "node index.js sync",
     "validate": "node index.js validate",
+    "git-pull": "node index.js git-pull",
+    "git-push": "node index.js git-push",
+    "git-status": "node index.js git-status",
     "test": "echo \"No tests yet\""
   },
   "keywords": ["cli", "skill", "symlink"],
