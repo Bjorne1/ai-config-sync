@@ -1106,7 +1106,7 @@ async function cleanupInvalidConfig(cfg) {
   const commandTargets = config.getCommandTargets(cfg);
 
   const invalidSkills = [];
-  const invalidCommands = [];
+  const invalidCommands = [];  // { name, tools: [tool], deadLinks: [linkName] }
 
   // 检查 Skills
   for (const skillName of Object.keys(cfg.skills || {})) {
@@ -1116,28 +1116,86 @@ async function cleanupInvalidConfig(cfg) {
     }
   }
 
-  // 检查 Commands - 需要考虑扁平化命名的情况
+  // 检查 Commands - 需要检查实际链接是否有效
+  const commands = scanner.scanCommands(commandsSourceDir);
   for (const cmdName of Object.keys(cfg.commands || {})) {
-    const directPath = path.join(commandsSourceDir, cmdName);
+    const enabledTools = cfg.commands[cmdName] || [];
+    const cmd = commands.find(c => c.name === cmdName);
 
-    if (fs.existsSync(directPath)) {
-      continue; // 直接路径存在，有效
+    // 源不存在，整个配置无效
+    if (!cmd) {
+      // 检查是否是扁平化命名
+      const dashIndex = cmdName.indexOf('-');
+      if (dashIndex > 0) {
+        const folderName = cmdName.substring(0, dashIndex);
+        const fileName = cmdName.substring(dashIndex + 1);
+        const expandedPath = path.join(commandsSourceDir, folderName, fileName);
+        if (!fs.existsSync(expandedPath)) {
+          invalidCommands.push({ name: cmdName, tools: enabledTools, deadLinks: [cmdName] });
+        }
+      } else {
+        invalidCommands.push({ name: cmdName, tools: enabledTools, deadLinks: [cmdName] });
+      }
+      continue;
     }
 
-    // 检查是否是扁平化命名 (folder-file.md 格式)
-    const dashIndex = cmdName.indexOf('-');
-    if (dashIndex > 0) {
-      const folderName = cmdName.substring(0, dashIndex);
-      const fileName = cmdName.substring(dashIndex + 1);
-      const expandedPath = path.join(commandsSourceDir, folderName, fileName);
+    // 对于目录，检查展开后的链接
+    if (cmd.isDirectory) {
+      const deadLinks = [];
+      for (const tool of enabledTools) {
+        const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+        if (subfolderSupport) {
+          // 支持子文件夹，检查目录链接
+          const targetPath = path.join(commandTargets[tool], cmdName);
+          if (!linker.isValidSymlink(targetPath, cmd.path)) {
+            deadLinks.push({ tool, linkName: cmdName });
+          }
+        } else {
+          // 不支持子文件夹，检查每个展开的文件链接
+          const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+          for (const item of expanded) {
+            const targetPath = path.join(commandTargets[tool], item.name);
+            if (fs.existsSync(targetPath) || fs.lstatSync(targetPath).isSymbolicLink()) {
+              if (!linker.isValidSymlink(targetPath, item.sourcePath)) {
+                deadLinks.push({ tool, linkName: item.name });
+              }
+            }
+          }
 
-      if (fs.existsSync(expandedPath)) {
-        continue; // 展开路径存在，有效
+          // 检查是否有旧的展开链接（源文件已改名）
+          const toolDir = commandTargets[tool];
+          if (fs.existsSync(toolDir)) {
+            const existingLinks = fs.readdirSync(toolDir);
+            const prefix = cmdName + '-';
+            for (const link of existingLinks) {
+              if (link.startsWith(prefix) && link.endsWith('.md')) {
+                const targetPath = path.join(toolDir, link);
+                try {
+                  const stats = fs.lstatSync(targetPath);
+                  if (stats.isSymbolicLink()) {
+                    const linkTarget = fs.readlinkSync(targetPath);
+                    // 检查链接目标是否存在
+                    const resolvedPath = path.isAbsolute(linkTarget)
+                      ? linkTarget
+                      : path.resolve(path.dirname(targetPath), linkTarget);
+                    if (!fs.existsSync(resolvedPath)) {
+                      deadLinks.push({ tool, linkName: link });
+                    }
+                  }
+                } catch (e) {
+                  // 链接已损坏
+                  deadLinks.push({ tool, linkName: link });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (deadLinks.length > 0) {
+        invalidCommands.push({ name: cmdName, tools: enabledTools, deadLinks });
       }
     }
-
-    // 都不存在，标记为无效
-    invalidCommands.push(cmdName);
   }
 
   if (invalidSkills.length === 0 && invalidCommands.length === 0) {
@@ -1151,8 +1209,15 @@ async function cleanupInvalidConfig(cfg) {
     invalidSkills.forEach(name => console.log(chalk.gray(`  - ${name}`)));
   }
   if (invalidCommands.length > 0) {
-    console.log(chalk.yellow(`发现 ${invalidCommands.length} 个无效 Command（源文件不存在）：`));
-    invalidCommands.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+    console.log(chalk.yellow(`发现 ${invalidCommands.length} 个无效 Command 配置：`));
+    invalidCommands.forEach(item => {
+      console.log(chalk.gray(`  - ${item.name}`));
+      item.deadLinks.forEach(link => {
+        const linkName = typeof link === 'string' ? link : link.linkName;
+        const tool = typeof link === 'string' ? '' : ` → ${link.tool}`;
+        console.log(chalk.gray(`      死链接: ${linkName}${tool}`));
+      });
+    });
   }
 
   // 确认清理
@@ -1186,16 +1251,25 @@ async function cleanupInvalidConfig(cfg) {
   }
 
   // 清理无效 Commands
-  for (const cmdName of invalidCommands) {
-    const enabledTools = cfg.commands[cmdName] || [];
-    for (const tool of enabledTools) {
-      const targetPath = path.join(commandTargets[tool], cmdName);
-      const result = linker.removeSymlink(targetPath);
-      if (result.success && !result.skipped) {
-        console.log(chalk.green(`✓ 删除死链接: ${cmdName} → ${tool}`));
+  for (const item of invalidCommands) {
+    for (const link of item.deadLinks) {
+      const linkName = typeof link === 'string' ? link : link.linkName;
+      const tools = typeof link === 'string' ? item.tools : [link.tool];
+
+      for (const tool of tools) {
+        const targetPath = path.join(commandTargets[tool], linkName);
+        const result = linker.removeSymlink(targetPath);
+        if (result.success && !result.skipped) {
+          console.log(chalk.green(`✓ 删除死链接: ${linkName} → ${tool}`));
+        }
       }
     }
-    delete cfg.commands[cmdName];
+
+    // 如果整个配置无效（源不存在），删除配置
+    const cmd = commands.find(c => c.name === item.name);
+    if (!cmd) {
+      delete cfg.commands[item.name];
+    }
   }
 
   config.saveConfig(cfg);
