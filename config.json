@@ -1,0 +1,175 @@
+{
+  "sourceDir": "/home/wcs/projects/ai-config-sync/skills",
+  "targets": {},
+  "skills": {
+    "docx": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "drawio-diagram": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "frontend-design": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "github-to-skills": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "pdf": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "skill-creator": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "skill-evolution-manager": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "skill-manager": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-brainstorm": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-dispatching-parallel-agents": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-executing-plans": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-finishing-branch": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-receiving-review": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-requesting-review": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-subagent-driven-development": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-systematic-debugging": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-test-driven-dev": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-using-git-worktrees": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-verification-before-completion": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-writing-plans": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp-writing-skills": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "web-artifacts-builder": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "wh-drg-mysql": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "xlsx": [
+      "claude",
+      "codex",
+      "gemini"
+    ]
+  },
+  "commandsSourceDir": "/home/wcs/projects/ai-config-sync/commands",
+  "commandTargets": {},
+  "commands": {
+    "commit-quicker.md": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "brainstorming.md": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "commit": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "gudaspec": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "sp": [
+      "claude",
+      "codex",
+      "gemini"
+    ]
+  },
+  "commandSubfolderSupport": {
+    "default": false,
+    "tools": {
+      "claude": true
+    }
+  },
+  "updateTools": {
+    "Claude Code": {
+      "type": "custom",
+      "command": "claude update"
+    },
+    "Codex": {
+      "type": "npm",
+      "package": "@openai/codex"
+    },
+    "OpenSpec": {
+      "type": "npm",
+      "package": "@fission-ai/openspec"
+    }
+  }
+}
