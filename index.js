@@ -1107,36 +1107,146 @@ async function cleanupInvalidConfig(cfg) {
 
   const invalidSkills = [];
   const invalidCommands = [];
+  const deadLinks = []; // 记录死链接（源存在但链接指向已改变）
 
   // 检查 Skills
   for (const skillName of Object.keys(cfg.skills || {})) {
     const sourcePath = path.join(sourceDir, skillName);
     if (!fs.existsSync(sourcePath)) {
-      invalidSkills.push(skillName);
+      invalidSkills.push({ name: skillName, reason: '源文件不存在' });
     }
   }
 
-  // 检查 Commands
+  // 检查 Commands - 需要检查展开后的实际链接
+  const commands = scanner.scanCommands(commandsSourceDir);
   for (const cmdName of Object.keys(cfg.commands || {})) {
-    const sourcePath = path.join(commandsSourceDir, cmdName);
-    if (!fs.existsSync(sourcePath)) {
-      invalidCommands.push(cmdName);
+    const cmd = commands.find(c => c.name === cmdName);
+    const enabledTools = cfg.commands[cmdName] || [];
+
+    if (!cmd) {
+      // 源目录/文件不存在
+      invalidCommands.push({ name: cmdName, reason: '源文件不存在', tools: enabledTools });
+    } else if (cmd.isDirectory) {
+      // 目录存在，检查展开后的链接是否仍有效
+      for (const tool of enabledTools) {
+        const subfolderSupport = config.getCommandSubfolderSupport(cfg, tool);
+        if (!subfolderSupport) {
+          // 检查展开的链接
+          const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+          const targetDir = commandTargets[tool];
+
+          for (const item of expanded) {
+            const targetPath = path.join(targetDir, item.name);
+            // 检查链接是否存在且指向正确的源
+            if (fs.existsSync(targetPath) || isDeadSymlink(targetPath)) {
+              if (!linker.isValidSymlink(targetPath, item.sourcePath)) {
+                deadLinks.push({
+                  name: item.name,
+                  tool,
+                  targetPath,
+                  reason: '链接指向已失效'
+                });
+              }
+            }
+          }
+
+          // 检查是否有旧的展开链接（源子文件已被重命名/删除）
+          const oldExpandedPattern = `${cmdName}-`;
+          try {
+            const existingFiles = fs.readdirSync(targetDir);
+            for (const file of existingFiles) {
+              if (file.startsWith(oldExpandedPattern)) {
+                const targetPath = path.join(targetDir, file);
+                const stats = fs.lstatSync(targetPath);
+                if (stats.isSymbolicLink()) {
+                  const linkTarget = fs.readlinkSync(targetPath);
+                  // 检查链接目标是否存在
+                  const resolvedTarget = path.isAbsolute(linkTarget)
+                    ? linkTarget
+                    : path.resolve(targetDir, linkTarget);
+                  if (!fs.existsSync(resolvedTarget)) {
+                    deadLinks.push({
+                      name: file,
+                      tool,
+                      targetPath,
+                      reason: '链接目标不存在'
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // 目标目录不存在，跳过
+          }
+        }
+      }
     }
   }
 
-  if (invalidSkills.length === 0 && invalidCommands.length === 0) {
+  // 还要扫描目标目录中的所有死链接（可能是手动删除源文件导致）
+  for (const [tool, targetDir] of Object.entries(commandTargets)) {
+    if (!fs.existsSync(targetDir)) continue;
+    try {
+      const files = fs.readdirSync(targetDir);
+      for (const file of files) {
+        const targetPath = path.join(targetDir, file);
+        if (isDeadSymlink(targetPath)) {
+          // 避免重复添加
+          if (!deadLinks.find(d => d.targetPath === targetPath)) {
+            deadLinks.push({
+              name: file,
+              tool,
+              targetPath,
+              reason: '死链接'
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // 忽略读取错误
+    }
+  }
+
+  // 同样扫描 skills 目标目录
+  for (const [tool, targetDir] of Object.entries(targets)) {
+    if (!fs.existsSync(targetDir)) continue;
+    try {
+      const files = fs.readdirSync(targetDir);
+      for (const file of files) {
+        const targetPath = path.join(targetDir, file);
+        if (isDeadSymlink(targetPath)) {
+          if (!deadLinks.find(d => d.targetPath === targetPath)) {
+            deadLinks.push({
+              name: file,
+              tool,
+              targetPath,
+              reason: '死链接'
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // 忽略读取错误
+    }
+  }
+
+  if (invalidSkills.length === 0 && invalidCommands.length === 0 && deadLinks.length === 0) {
     console.log(chalk.green('✓ 所有配置均有效，无需清理\n'));
     return;
   }
 
   // 显示无效项
   if (invalidSkills.length > 0) {
-    console.log(chalk.yellow(`发现 ${invalidSkills.length} 个无效 Skill（源文件不存在）：`));
-    invalidSkills.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+    console.log(chalk.yellow(`发现 ${invalidSkills.length} 个无效 Skill：`));
+    invalidSkills.forEach(item => console.log(chalk.gray(`  - ${item.name} (${item.reason})`)));
   }
   if (invalidCommands.length > 0) {
-    console.log(chalk.yellow(`发现 ${invalidCommands.length} 个无效 Command（源文件不存在）：`));
-    invalidCommands.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+    console.log(chalk.yellow(`发现 ${invalidCommands.length} 个无效 Command：`));
+    invalidCommands.forEach(item => console.log(chalk.gray(`  - ${item.name} (${item.reason})`)));
+  }
+  if (deadLinks.length > 0) {
+    console.log(chalk.yellow(`发现 ${deadLinks.length} 个死链接：`));
+    deadLinks.forEach(item => console.log(chalk.gray(`  - ${item.name} → ${item.tool} (${item.reason})`)));
   }
 
   // 确认清理
@@ -1157,33 +1267,58 @@ async function cleanupInvalidConfig(cfg) {
   console.log();
 
   // 清理无效 Skills
-  for (const skillName of invalidSkills) {
-    const enabledTools = cfg.skills[skillName] || [];
+  for (const item of invalidSkills) {
+    const enabledTools = cfg.skills[item.name] || [];
     for (const tool of enabledTools) {
-      const targetPath = path.join(targets[tool], skillName);
+      const targetPath = path.join(targets[tool], item.name);
       const result = linker.removeSymlink(targetPath);
       if (result.success && !result.skipped) {
-        console.log(chalk.green(`✓ 删除死链接: ${skillName} → ${tool}`));
+        console.log(chalk.green(`✓ 删除: ${item.name} → ${tool}`));
       }
     }
-    delete cfg.skills[skillName];
+    delete cfg.skills[item.name];
   }
 
   // 清理无效 Commands
-  for (const cmdName of invalidCommands) {
-    const enabledTools = cfg.commands[cmdName] || [];
-    for (const tool of enabledTools) {
-      const targetPath = path.join(commandTargets[tool], cmdName);
+  for (const item of invalidCommands) {
+    for (const tool of item.tools) {
+      const targetPath = path.join(commandTargets[tool], item.name);
       const result = linker.removeSymlink(targetPath);
       if (result.success && !result.skipped) {
-        console.log(chalk.green(`✓ 删除死链接: ${cmdName} → ${tool}`));
+        console.log(chalk.green(`✓ 删除: ${item.name} → ${tool}`));
       }
     }
-    delete cfg.commands[cmdName];
+    delete cfg.commands[item.name];
+  }
+
+  // 清理死链接
+  for (const item of deadLinks) {
+    const result = linker.removeSymlink(item.targetPath);
+    if (result.success && !result.skipped) {
+      console.log(chalk.green(`✓ 删除死链接: ${item.name} → ${item.tool}`));
+    }
   }
 
   config.saveConfig(cfg);
   console.log(chalk.green('\n✓ 清理完成，配置已保存\n'));
+}
+
+// 检查是否为死链接（链接存在但目标不存在）
+function isDeadSymlink(linkPath) {
+  try {
+    const stats = fs.lstatSync(linkPath);
+    if (stats.isSymbolicLink()) {
+      try {
+        fs.statSync(linkPath); // 会跟随链接
+        return false; // 链接有效
+      } catch (e) {
+        return true; // 链接目标不存在
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function updateAllToolsMenu(cfg) {
