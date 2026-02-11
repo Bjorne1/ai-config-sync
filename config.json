@@ -1,5 +1,5 @@
 {
-  "sourceDir": "/home/wcs/projects/ai-config-sync/skills",
+  "sourceDir": "skills",
   "targets": {},
   "skills": {
     "docx": [
@@ -123,7 +123,7 @@
       "gemini"
     ]
   },
-  "commandsSourceDir": "/home/wcs/projects/ai-config-sync/commands",
+  "commandsSourceDir": "commands",
   "commandTargets": {},
   "commands": {
     "commit-quicker.md": [
