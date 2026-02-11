@@ -1,0 +1,35 @@
+{
+  "workflow_id": "",
+  "workflow_type": "feature",
+  "created_at": "",
+  "last_updated": "",
+
+  "artifacts": {
+    "design_doc": "",
+    "impl_plan": "",
+    "worktree_path": "",
+    "worktree_branch": "",
+    "base_branch": "main"
+  },
+
+  "execution": {
+    "mode": "",
+    "current_phase": "planning",
+    "total_tasks": 0,
+    "completed_tasks": 0
+  },
+
+  "tasks": [],
+
+  "reviews": {
+    "spec_reviews": [],
+    "code_reviews": [],
+    "pending_reviews": []
+  },
+
+  "metadata": {
+    "session_ids": [],
+    "tags": [],
+    "priority": "normal"
+  }
+}
