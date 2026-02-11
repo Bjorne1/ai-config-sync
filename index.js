@@ -103,6 +103,7 @@ async function showMenu(cfg) {
     { name: '管理更新工具列表', value: 'manage-update-tools' },
     new inquirer.Separator('── 其他 ──'),
     { name: '查看当前状态', value: 'status' },
+    { name: '清理无效配置', value: 'cleanup' },
     { name: '修改源目录', value: 'change-source' },
     { name: '退出', value: 'exit' }
   ];
@@ -146,6 +147,9 @@ async function showMenu(cfg) {
       break;
     case 'status':
       await showStatus(cfg);
+      break;
+    case 'cleanup':
+      await cleanupInvalidConfig(cfg);
       break;
     case 'change-source':
       await changeSourceDir(cfg);
@@ -1091,6 +1095,95 @@ async function validateLinks(cfg) {
     console.log(chalk.yellow('\n提示: 运行 "node index.js sync" 修复损坏的链接'));
   }
   console.log();
+}
+
+async function cleanupInvalidConfig(cfg) {
+  console.log(chalk.cyan('\n🧹 检查无效配置...\n'));
+
+  const sourceDir = cfg.sourceDir;
+  const commandsSourceDir = cfg.commandsSourceDir || path.join(process.cwd(), 'commands');
+  const targets = config.getTargets(cfg);
+  const commandTargets = config.getCommandTargets(cfg);
+
+  const invalidSkills = [];
+  const invalidCommands = [];
+
+  // 检查 Skills
+  for (const skillName of Object.keys(cfg.skills || {})) {
+    const sourcePath = path.join(sourceDir, skillName);
+    if (!fs.existsSync(sourcePath)) {
+      invalidSkills.push(skillName);
+    }
+  }
+
+  // 检查 Commands
+  for (const cmdName of Object.keys(cfg.commands || {})) {
+    const sourcePath = path.join(commandsSourceDir, cmdName);
+    if (!fs.existsSync(sourcePath)) {
+      invalidCommands.push(cmdName);
+    }
+  }
+
+  if (invalidSkills.length === 0 && invalidCommands.length === 0) {
+    console.log(chalk.green('✓ 所有配置均有效，无需清理\n'));
+    return;
+  }
+
+  // 显示无效项
+  if (invalidSkills.length > 0) {
+    console.log(chalk.yellow(`发现 ${invalidSkills.length} 个无效 Skill（源文件不存在）：`));
+    invalidSkills.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+  }
+  if (invalidCommands.length > 0) {
+    console.log(chalk.yellow(`发现 ${invalidCommands.length} 个无效 Command（源文件不存在）：`));
+    invalidCommands.forEach(name => console.log(chalk.gray(`  - ${name}`)));
+  }
+
+  // 确认清理
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: '是否清理这些无效配置并删除对应的死链接？',
+      default: true
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('\n操作已取消\n'));
+    return;
+  }
+
+  console.log();
+
+  // 清理无效 Skills
+  for (const skillName of invalidSkills) {
+    const enabledTools = cfg.skills[skillName] || [];
+    for (const tool of enabledTools) {
+      const targetPath = path.join(targets[tool], skillName);
+      const result = linker.removeSymlink(targetPath);
+      if (result.success && !result.skipped) {
+        console.log(chalk.green(`✓ 删除死链接: ${skillName} → ${tool}`));
+      }
+    }
+    delete cfg.skills[skillName];
+  }
+
+  // 清理无效 Commands
+  for (const cmdName of invalidCommands) {
+    const enabledTools = cfg.commands[cmdName] || [];
+    for (const tool of enabledTools) {
+      const targetPath = path.join(commandTargets[tool], cmdName);
+      const result = linker.removeSymlink(targetPath);
+      if (result.success && !result.skipped) {
+        console.log(chalk.green(`✓ 删除死链接: ${cmdName} → ${tool}`));
+      }
+    }
+    delete cfg.commands[cmdName];
+  }
+
+  config.saveConfig(cfg);
+  console.log(chalk.green('\n✓ 清理完成，配置已保存\n'));
 }
 
 async function updateAllToolsMenu(cfg) {
