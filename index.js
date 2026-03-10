@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./lib/config');
 const scanner = require('./lib/scanner');
+const fileSync = require('./lib/file-sync');
 const linker = require('./lib/linker');
 const updater = require('./lib/updater');
 const git = require('./lib/git');
@@ -24,6 +25,27 @@ const PERMISSION_HINTS = {
     '2. 或使用 sudo 运行程序'
   ]
 };
+
+function findLegacyFlattenedCommand(commands, cmdName) {
+  for (const cmd of commands) {
+    if (!cmd.isDirectory) {
+      continue;
+    }
+
+    const child = cmd.children.find(item => {
+      return scanner.flattenCommandName(cmd.name, item) === cmdName;
+    });
+
+    if (child) {
+      return {
+        parentName: cmd.name,
+        sourcePath: path.join(cmd.path, child)
+      };
+    }
+  }
+
+  return null;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -748,7 +770,7 @@ async function addCommand(cfg) {
 
       for (const item of expanded) {
         const targetPath = path.join(targetDir, item.name);
-        const result = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+        const result = fileSync.createCopy(item.sourcePath, targetPath);
 
         if (result.success) {
           if (result.skipped) {
@@ -761,12 +783,13 @@ async function addCommand(cfg) {
             { type: 'confirm', name: 'overwrite', message: `${item.name} → ${tool}: ${result.message}，是否覆盖？`, default: false }
           ]);
           if (overwrite) {
-            const stats = fs.lstatSync(targetPath);
-            if (stats.isSymbolicLink()) fs.unlinkSync(targetPath);
-            else if (stats.isDirectory()) fs.rmSync(targetPath, { recursive: true });
-            else fs.unlinkSync(targetPath);
+            const removeResult = fileSync.removePath(targetPath);
+            if (!removeResult.success) {
+              console.log(chalk.red(`❌ ${item.name} → ${tool}: ${removeResult.message}`));
+              continue;
+            }
 
-            const retryResult = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+            const retryResult = fileSync.createCopy(item.sourcePath, targetPath);
             if (retryResult.success) {
               console.log(chalk.green(`✓ ${item.name} → ${tool}: 创建成功`));
             } else {
@@ -846,7 +869,7 @@ async function disableCommand(cfg) {
       const expanded = scanner.expandCommandsForTool([cmd], tool, false);
       for (const item of expanded) {
         const targetPath = path.join(targets[tool], item.name);
-        const result = linker.removeSymlink(targetPath);
+        const result = fileSync.removePath(targetPath);
         if (result.success) {
           console.log(chalk.green(`✓ ${item.name} → ${tool}: ${result.message}`));
         } else {
@@ -855,7 +878,7 @@ async function disableCommand(cfg) {
       }
     } else {
       const targetPath = path.join(targets[tool], cmdName);
-      const result = linker.removeSymlink(targetPath);
+      const result = fileSync.removePath(targetPath);
       if (result.success) {
         if (result.skipped) {
           console.log(chalk.gray(`⊙ ${cmdName} → ${tool}: ${result.message}`));
@@ -928,7 +951,7 @@ async function removeCommand(cfg) {
         const expanded = scanner.expandCommandsForTool([cmd], tool, false);
         for (const item of expanded) {
           const targetPath = path.join(targets[tool], item.name);
-          const result = linker.removeSymlink(targetPath);
+          const result = fileSync.removePath(targetPath);
           if (result.success) {
             console.log(chalk.green(`✓ ${item.name} → ${tool}: ${result.message}`));
           } else {
@@ -937,7 +960,7 @@ async function removeCommand(cfg) {
         }
       } else {
         const targetPath = path.join(targets[tool], cmdName);
-        const result = linker.removeSymlink(targetPath);
+        const result = fileSync.removePath(targetPath);
         if (result.success) {
           console.log(chalk.green(`✓ ${cmdName} → ${tool}: ${result.message}`));
         } else {
@@ -970,12 +993,36 @@ async function syncCommands(cfg) {
   let successCount = 0;
   let failCount = 0;
   let skipCount = 0;
+  let configChanged = false;
 
   for (const cmdName of enabledCommands) {
     const enabledTools = cfg.commands[cmdName];
     const cmd = commands.find(c => c.name === cmdName);
 
     if (!cmd) {
+      const legacyCommand = findLegacyFlattenedCommand(commands, cmdName);
+      if (legacyCommand) {
+        console.log(chalk.yellow(`⚠ ${cmdName}: 检测到旧版扁平化配置，正在清理残留目标`));
+
+        for (const tool of enabledTools) {
+          const targetPath = path.join(targets[tool], cmdName);
+          const result = fileSync.removePath(targetPath);
+          if (result.success) {
+            const color = result.skipped ? chalk.gray : chalk.green;
+            const symbol = result.skipped ? '⊙' : '✓';
+            console.log(color(`${symbol} ${cmdName} → ${tool}: ${result.message}`));
+            successCount++;
+          } else {
+            console.log(chalk.red(`✗ ${cmdName} → ${tool}: ${result.message}`));
+            failCount++;
+          }
+        }
+
+        delete cfg.commands[cmdName];
+        configChanged = true;
+        continue;
+      }
+
       console.log(chalk.red(`✗ ${cmdName}: 源文件不存在，已跳过`));
       skipCount++;
       continue;
@@ -996,29 +1043,11 @@ async function syncCommands(cfg) {
 
       for (const item of expanded) {
         const targetPath = path.join(targetDir, item.name);
-
-        if (linker.isValidSymlink(targetPath, item.sourcePath)) {
-          console.log(chalk.gray(`⊙ ${item.name} → ${tool}: 链接有效`));
-          successCount++;
-          continue;
-        }
-
-        if (fs.existsSync(targetPath)) {
-          try {
-            const stats = fs.lstatSync(targetPath);
-            if (stats.isSymbolicLink()) fs.unlinkSync(targetPath);
-            else if (stats.isDirectory()) fs.rmSync(targetPath, { recursive: true });
-            else fs.unlinkSync(targetPath);
-          } catch (error) {
-            console.log(chalk.red(`✗ ${item.name} → ${tool}: 清理失败 - ${error.message}`));
-            failCount++;
-            continue;
-          }
-        }
-
-        const result = linker.createSymlink(item.sourcePath, targetPath, item.isDirectory || false);
+        const result = fileSync.syncCopy(item.sourcePath, targetPath);
         if (result.success) {
-          console.log(chalk.green(`✓ ${item.name} → ${tool}: 修复成功`));
+          const color = result.skipped ? chalk.gray : chalk.green;
+          const symbol = result.skipped ? '⊙' : '✓';
+          console.log(color(`${symbol} ${item.name} → ${tool}: ${result.message}`));
           successCount++;
         } else {
           console.log(chalk.red(`✗ ${item.name} → ${tool}: ${result.message}`));
@@ -1030,6 +1059,10 @@ async function syncCommands(cfg) {
 
   console.log(chalk.cyan('\n同步完成：'));
   console.log(`✓ ${successCount} 成功 | ✗ ${failCount} 失败 | ⚠ ${skipCount} 跳过`);
+  if (configChanged) {
+    config.saveConfig(cfg);
+    console.log(chalk.green('✓ 已清理旧版 Command 配置'));
+  }
   console.log();
 }
 
@@ -1071,12 +1104,12 @@ async function showCommandStatus(cfg) {
         const expanded = scanner.expandCommandsForTool([cmd], tool, false);
         valid = expanded.every(item => {
           const targetPath = path.join(targets[tool], item.name);
-          return linker.isValidSymlink(targetPath, item.sourcePath);
+          return fileSync.isSyncedCopy(item.sourcePath, targetPath);
         });
       } else {
         const targetPath = path.join(targets[tool], cmdName);
         const sourcePath = cmd ? cmd.path : path.join(sourceDir, cmdName);
-        valid = linker.isValidSymlink(targetPath, sourcePath);
+        valid = fileSync.isSyncedCopy(sourcePath, targetPath);
       }
 
       row.push(valid ? chalk.green('✓') : chalk.red('✗'));
@@ -1157,6 +1190,12 @@ async function cleanupInvalidConfig(cfg) {
 
     // 源不存在，整个配置无效
     if (!cmd) {
+      const legacyCommand = findLegacyFlattenedCommand(commands, cmdName);
+      if (legacyCommand) {
+        invalidCommands.push({ name: cmdName, tools: enabledTools, deadLinks: [cmdName] });
+        continue;
+      }
+
       // 检查是否是扁平化命名
       const dashIndex = cmdName.indexOf('-');
       if (dashIndex > 0) {
@@ -1180,45 +1219,28 @@ async function cleanupInvalidConfig(cfg) {
         if (subfolderSupport) {
           // 支持子文件夹，检查目录链接
           const targetPath = path.join(commandTargets[tool], cmdName);
-          if (!linker.isValidSymlink(targetPath, cmd.path)) {
+          if (!fileSync.isSyncedCopy(cmd.path, targetPath)) {
             deadLinks.push({ tool, linkName: cmdName });
           }
         } else {
           // 不支持子文件夹，检查每个展开的文件链接
           const expanded = scanner.expandCommandsForTool([cmd], tool, false);
+          const expectedNames = new Set(expanded.map(item => item.name));
           for (const item of expanded) {
             const targetPath = path.join(commandTargets[tool], item.name);
-            if (fs.existsSync(targetPath) || fs.lstatSync(targetPath).isSymbolicLink()) {
-              if (!linker.isValidSymlink(targetPath, item.sourcePath)) {
-                deadLinks.push({ tool, linkName: item.name });
-              }
+            if (fileSync.hasPath(targetPath) && !fileSync.isSyncedCopy(item.sourcePath, targetPath)) {
+              deadLinks.push({ tool, linkName: item.name });
             }
           }
 
-          // 检查是否有旧的展开链接（源文件已改名）
+          // 检查是否有旧的展开目标（源文件已改名或历史残留）
           const toolDir = commandTargets[tool];
           if (fs.existsSync(toolDir)) {
             const existingLinks = fs.readdirSync(toolDir);
             const prefix = cmdName + '-';
             for (const link of existingLinks) {
-              if (link.startsWith(prefix) && link.endsWith('.md')) {
-                const targetPath = path.join(toolDir, link);
-                try {
-                  const stats = fs.lstatSync(targetPath);
-                  if (stats.isSymbolicLink()) {
-                    const linkTarget = fs.readlinkSync(targetPath);
-                    // 检查链接目标是否存在
-                    const resolvedPath = path.isAbsolute(linkTarget)
-                      ? linkTarget
-                      : path.resolve(path.dirname(targetPath), linkTarget);
-                    if (!fs.existsSync(resolvedPath)) {
-                      deadLinks.push({ tool, linkName: link });
-                    }
-                  }
-                } catch (e) {
-                  // 链接已损坏
-                  deadLinks.push({ tool, linkName: link });
-                }
+              if (link.startsWith(prefix) && link.endsWith('.md') && !expectedNames.has(link)) {
+                deadLinks.push({ tool, linkName: link });
               }
             }
           }
@@ -1248,7 +1270,7 @@ async function cleanupInvalidConfig(cfg) {
       item.deadLinks.forEach(link => {
         const linkName = typeof link === 'string' ? link : link.linkName;
         const tool = typeof link === 'string' ? '' : ` → ${link.tool}`;
-        console.log(chalk.gray(`      死链接: ${linkName}${tool}`));
+        console.log(chalk.gray(`      残留目标: ${linkName}${tool}`));
       });
     });
   }
@@ -1258,7 +1280,7 @@ async function cleanupInvalidConfig(cfg) {
     {
       type: 'confirm',
       name: 'confirmed',
-      message: '是否清理这些无效配置并删除对应的死链接？',
+      message: '是否清理这些无效配置并删除对应的残留目标？',
       default: true
     }
   ]);
@@ -1291,9 +1313,9 @@ async function cleanupInvalidConfig(cfg) {
 
       for (const tool of tools) {
         const targetPath = path.join(commandTargets[tool], linkName);
-        const result = linker.removeSymlink(targetPath);
+        const result = fileSync.removePath(targetPath);
         if (result.success && !result.skipped) {
-          console.log(chalk.green(`✓ 删除死链接: ${linkName} → ${tool}`));
+          console.log(chalk.green(`✓ 删除残留目标: ${linkName} → ${tool}`));
         }
       }
     }
