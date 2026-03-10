@@ -1,15 +1,10 @@
 {
-  "sourceDir": "D:\\wcs_project\\ai-config-sync\\skills",
+  "sourceDir": "/home/wcs/projects/ai-config-sync/skills",
   "targets": {},
   "skills": {},
-  "commandsSourceDir": "D:\\wcs_project\\ai-config-sync\\commands",
+  "commandsSourceDir": "/home/wcs/projects/ai-config-sync/commands",
   "commandTargets": {},
   "commands": {
-    "commit-quicker.md": [
-      "claude",
-      "codex",
-      "gemini"
-    ],
     "brainstorming.md": [
       "claude",
       "codex",
@@ -21,11 +16,6 @@
       "gemini"
     ],
     "gudaspec": [
-      "claude",
-      "codex",
-      "gemini"
-    ],
-    "sp": [
       "claude",
       "codex",
       "gemini"
