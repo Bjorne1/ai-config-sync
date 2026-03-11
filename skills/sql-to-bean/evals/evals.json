@@ -1,0 +1,23 @@
+{
+  "skill_name": "sql-to-bean",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我给 wh-drg 数据库的 drg_cc 表生成标准三层代码，包路径使用 com.whxx.drg.cc。不要让我贴 DDL，你自己查表结构。",
+      "expected_output": "优先识别 wh-drg 为 wh_drg，调用 wh-drg-mysql skill 查询 drg_cc 表建表结构，再生成 Bean、DAO 和 Service 三个文件。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "数据库是 wh_drg，表名是 drg_cc，包路径 com.whxx.drg.rule。按现有表结构生成 Java Bean、Dao、Service。",
+      "expected_output": "使用数据库直连模式而不是先索要 CREATE TABLE，查询真实表结构并生成符合模板的三层代码。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "当前环境连不上 billing_prod。表是 invoice_record，包路径 com.demo.billing。我给你一段 CREATE TABLE，请按它生成标准三层代码。",
+      "expected_output": "显式说明当前缺少数据库连接能力，接受用户提供的 DDL 作为结构来源，再生成 Bean、DAO 和 Service。",
+      "files": []
+    }
+  ]
+}

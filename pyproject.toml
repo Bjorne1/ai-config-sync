@@ -1,0 +1,12 @@
+[project]
+name = "ai-config-sync"
+version = "1.0.0"
+description = "Windows desktop app for synchronizing AI skills and commands to Windows and WSL targets"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "PySide6>=6.9,<7",
+]
+
+[project.scripts]
+ai-config-sync = "python_app.bootstrap:run"

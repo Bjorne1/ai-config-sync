@@ -1,57 +1,49 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This repository is now a Python + PySide6 Windows desktop application.
 
 ## 项目概述
 
-Skill Manager 是一个 CLI 工具，用于统一管理多个 AI 工具的 Skills。通过软链接将 Skill 文件从统一源目录同步到 Claude、Codex、Gemini 等工具的技能目录。
+AI Config Sync 用于把统一源目录中的 `Skills` / `Commands` 分发到 Claude、Codex、Gemini、Antigravity 等工具目录，并可选同步到 WSL2。
 
 ## 常用命令
 
 ```bash
 # 安装依赖
-npm install
+python -m pip install -r requirements.txt
 
-# 启动交互式菜单
-npm start
+# 启动桌面 GUI
+python -m python_app
 
-# 命令行快捷操作
-npm run status    # 查看状态
-npm run sync      # 同步所有 Skill
-npm run validate  # 验证链接
-
-# 管理员权限启动（Windows）
+# Windows 启动脚本
 start.bat
+
+# 验证
+python -m compileall python_app
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
 ## 架构说明
 
 ### 核心模块
 
-- `index.js` - 主入口，包含交互式菜单和所有用户操作（添加/禁用/移除/同步/验证）
-- `lib/config.js` - 配置管理，定义默认目标目录（claude/codex/gemini/antigravity）
-- `lib/scanner.js` - 扫描源目录中的 Skill 文件和目录
-- `lib/linker.js` - 软链接操作（创建/删除/验证/权限检查）
+- `python_app\bootstrap.py` - Qt 应用装配与启动入口
+- `python_app\controller.py` - GUI 与服务层之间的动作编排
+- `python_app\core\config_service.py` - `config.json` 读写、归一化与迁移
+- `python_app\core\environment_service.py` - Windows / WSL 环境解析
+- `python_app\core\resource_service.py` - 资源扫描与展开
+- `python_app\core\resource_operations.py` - 状态汇总、同步、清理
+- `python_app\core\sync_engine.py` - `copy` / `symlink` 执行逻辑
+- `python_app\gui\main_window.py` - 主窗口与页面容器
 
 ### 数据流
 
-1. 用户操作 → `index.js` 处理用户输入
-2. 配置读写 → `config.js` 管理 `config.json`
-3. 扫描源目录 → `scanner.js` 枚举可用 Skills
-4. 链接操作 → `linker.js` 执行 symlink 创建/删除
-
-### 配置结构 (config.json)
-
-```json
-{
-  "sourceDir": "Skill 源文件目录",
-  "targets": {},  // 自定义目标目录（覆盖默认值）
-  "skills": {     // 已启用的 Skill 及其目标工具
-    "skill-name": ["claude", "codex"]
-  }
-}
-```
+1. GUI 发出动作信号
+2. `controller.py` 调用 `AppService`
+3. `python_app\core\**` 处理配置、扫描、同步、清理、更新
+4. Controller 回填 snapshot / logs / 结果到主窗口
 
 ## Windows 特殊要求
 
-创建软链接需要管理员权限或启用开发者模式。程序启动时会自动检测权限。
+- 只支持 Windows
+- 创建软链接需要管理员权限或启用开发者模式

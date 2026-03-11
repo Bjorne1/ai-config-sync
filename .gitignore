@@ -2,3 +2,7 @@ node_modules/
 .test-symlink/
 *.log
 .ace-tool/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
