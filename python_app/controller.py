@@ -42,6 +42,7 @@ class AppController(QObject):
         self.window.save_config_requested.connect(self._save_config)
         self.window.cleanup_requested.connect(self._cleanup)
         self.window.update_tools_requested.connect(self._update_tools)
+        self.window.save_tool_definitions_requested.connect(self._save_tool_definitions)
 
     def _fetch_snapshot(self) -> dict[str, object]:
         config = self.service.get_config()
@@ -75,10 +76,19 @@ class AppController(QObject):
         task = lambda: self.service.replace_resource_map(kind, assignments)
         self._run_task(key, label, task, lambda _result: self.refresh_snapshot(False, f"refreshAfter{key.title()}"))
 
-    def _sync_selected(self, kind: str, names: list[str]) -> None:
+    def _sync_selected(self, kind: str, payload: object) -> None:
         key = "syncSkills" if kind == "skills" else "syncCommands"
         label = "同步 Skills" if kind == "skills" else "同步 Commands"
-        task = lambda: self.service.sync_resources(kind, names)
+        names: list[str] = []
+        assignments = None
+        if isinstance(payload, dict):
+            raw_names = payload.get("names")
+            raw_assignments = payload.get("assignments")
+            names = raw_names if isinstance(raw_names, list) else []
+            assignments = raw_assignments if isinstance(raw_assignments, dict) else None
+        elif isinstance(payload, list):
+            names = payload
+        task = lambda: self.service.sync_resources(kind, names, assignments)
         self._run_task(key, label, task, lambda result: self._after_partial_sync(kind, result))
 
     def _after_partial_sync(self, kind: str, result: list[dict[str, object]]) -> None:
@@ -103,6 +113,14 @@ class AppController(QObject):
 
     def _update_tools(self) -> None:
         self._run_task("updateTools", "更新工具", self.service.update_tools, self.window.set_tool_results)
+
+    def _save_tool_definitions(self, definitions: dict[str, dict[str, str]]) -> None:
+        self._run_task(
+            "saveToolDefinitions",
+            "保存工具更新定义",
+            lambda: self.service.save_config({"updateTools": definitions}),
+            lambda _result: self.refresh_snapshot(False, "refreshAfterSaveToolDefinitions"),
+        )
 
     def _run_task(
         self,

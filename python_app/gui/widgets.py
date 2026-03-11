@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -9,12 +10,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSizePolicy,
+    QTableView,
     QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from .theme import STATE_COLORS, create_mono_font
+from .theme import BORDER, STATE_COLORS, SURFACE_ALT, TEXT_MUTED, create_mono_font
 
 
 class CardFrame(QFrame):
@@ -138,6 +140,162 @@ class ToolTargetGrid(CardFrame):
         self._inputs[tool_id] = label
 
 
+class GroupedHeaderView(QHeaderView):
+    def __init__(
+        self,
+        groups: tuple[tuple[str, tuple[int, ...]], ...],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._groups = groups
+        self._grouped_columns = {column for _label, columns in groups for column in columns}
+        self._top_height = 22
+        self.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.setMinimumHeight(52)
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setHeight(max(hint.height(), 52))
+        return hint
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        for logical_index in range(self.count()):
+            if self.isSectionHidden(logical_index):
+                continue
+            rect = self._section_rect(logical_index)
+            if not rect.isValid() or not rect.intersects(event.rect()):
+                continue
+            label = self._header_label(logical_index)
+            if logical_index in self._grouped_columns:
+                self._draw_cell(painter, rect.adjusted(0, self._top_height, 0, 0), label)
+                continue
+            self._draw_cell(painter, rect, label)
+        for group_label, columns in self._groups:
+            rect = self._group_rect(columns)
+            if rect and rect.intersects(event.rect()):
+                self._draw_cell(painter, rect, group_label, center=True)
+
+    def _header_label(self, logical_index: int) -> str:
+        if not self.model():
+            return ""
+        value = self.model().headerData(logical_index, self.orientation(), Qt.ItemDataRole.DisplayRole)
+        return str(value or "")
+
+    def _section_rect(self, logical_index: int):
+        return self.viewport().rect().adjusted(
+            self.sectionViewportPosition(logical_index),
+            0,
+            self.sectionViewportPosition(logical_index) + self.sectionSize(logical_index) - self.viewport().width(),
+            0,
+        )
+
+    def _group_rect(self, columns: tuple[int, ...]):
+        visible = [column for column in columns if not self.isSectionHidden(column)]
+        if not visible:
+            return None
+        left = self.sectionViewportPosition(visible[0])
+        right = self.sectionViewportPosition(visible[-1]) + self.sectionSize(visible[-1])
+        return self.viewport().rect().adjusted(left, 0, right - self.viewport().width(), self._top_height - self.height())
+
+    def _draw_cell(self, painter: QPainter, rect, text: str, center: bool = False) -> None:
+        painter.save()
+        painter.fillRect(rect, QColor(SURFACE_ALT))
+        painter.setPen(QPen(QColor(BORDER)))
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.setPen(QColor(TEXT_MUTED))
+        font = painter.font()
+        font.setPointSize(10)
+        font.setBold(True)
+        painter.setFont(font)
+        alignment = Qt.AlignmentFlag.AlignCenter if center else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        painter.drawText(rect.adjusted(8, 0, -8, 0), alignment, text)
+        painter.restore()
+
+
+class FrozenRightTableWidget(QTableWidget):
+    def __init__(
+        self,
+        rows: int,
+        columns: int,
+        frozen_columns: tuple[int, ...],
+        frozen_groups: tuple[tuple[str, tuple[int, ...]], ...] = (),
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(rows, columns, parent)
+        self._frozen_columns = tuple(sorted(frozen_columns))
+        self.setHorizontalHeader(GroupedHeaderView((), self))
+        self._frozen_view = QTableView(self)
+        self._frozen_view.setModel(self.model())
+        self._frozen_view.setSelectionModel(self.selectionModel())
+        self._frozen_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._frozen_view.setFrameShape(QFrame.Shape.NoFrame)
+        self._frozen_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._frozen_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._frozen_view.setHorizontalHeader(GroupedHeaderView(frozen_groups, self._frozen_view))
+        self.viewport().stackUnder(self._frozen_view)
+        self._apply_frozen_columns()
+        self.horizontalHeader().sectionResized.connect(self._handle_section_resized)
+        self.verticalHeader().sectionResized.connect(self._handle_row_resized)
+        self.verticalScrollBar().valueChanged.connect(self._frozen_view.verticalScrollBar().setValue)
+        self._frozen_view.verticalScrollBar().valueChanged.connect(self.verticalScrollBar().setValue)
+        self._sync_row_heights()
+        self._update_frozen_geometry()
+        self._frozen_view.show()
+
+    def frozen_view(self) -> QTableView:
+        return self._frozen_view
+
+    def sync_frozen_view(self) -> None:
+        self._apply_frozen_columns()
+        self._sync_row_heights()
+        self._update_frozen_geometry()
+        self.viewport().update()
+        self._frozen_view.viewport().update()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_frozen_geometry()
+
+    def updateGeometries(self) -> None:
+        super().updateGeometries()
+        self.setViewportMargins(0, self.horizontalHeader().height(), self._frozen_width(), 0)
+        self._update_frozen_geometry()
+
+    def _frozen_width(self) -> int:
+        return sum(self._frozen_view.columnWidth(column) for column in self._frozen_columns)
+
+    def _apply_frozen_columns(self) -> None:
+        frozen_set = set(self._frozen_columns)
+        for column in range(self.columnCount()):
+            self.setColumnHidden(column, column in frozen_set)
+            self._frozen_view.setColumnHidden(column, column not in frozen_set)
+
+    def _sync_row_heights(self) -> None:
+        for row in range(self.rowCount()):
+            self._frozen_view.setRowHeight(row, self.rowHeight(row))
+
+    def _update_frozen_geometry(self) -> None:
+        frozen_width = self._frozen_width()
+        viewport = self.viewport().geometry()
+        self._frozen_view.setGeometry(
+            viewport.x() + viewport.width(),
+            self.frameWidth(),
+            frozen_width,
+            self.viewport().height() + self.horizontalHeader().height(),
+        )
+
+    def _handle_section_resized(self, logical_index: int, _old_size: int, new_size: int) -> None:
+        if logical_index in self._frozen_columns:
+            self._frozen_view.setColumnWidth(logical_index, new_size)
+            self._update_frozen_geometry()
+
+    def _handle_row_resized(self, logical_index: int, _old_size: int, new_size: int) -> None:
+        self._frozen_view.setRowHeight(logical_index, new_size)
+
+
 def layout_container(layout: QLayout, max_vertical: bool = True) -> QWidget:
     container = QWidget()
     container.setLayout(layout)
@@ -146,14 +304,15 @@ def layout_container(layout: QLayout, max_vertical: bool = True) -> QWidget:
     return container
 
 
-def configure_table(table: QTableWidget, stretch_columns: tuple[int, ...] = ()) -> None:
+def configure_table(table: QTableView, stretch_columns: tuple[int, ...] = ()) -> None:
     table.setAlternatingRowColors(True)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     table.setWordWrap(False)
     table.setShowGrid(False)
-    table.setCornerButtonEnabled(False)
+    if isinstance(table, QTableWidget):
+        table.setCornerButtonEnabled(False)
     table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     table.verticalHeader().setVisible(False)
@@ -161,6 +320,7 @@ def configure_table(table: QTableWidget, stretch_columns: tuple[int, ...] = ()) 
     header = table.horizontalHeader()
     header.setStretchLastSection(False)
     header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    for index in range(table.columnCount()):
+    column_count = table.model().columnCount() if table.model() else 0
+    for index in range(column_count):
         mode = QHeaderView.ResizeMode.Stretch if index in stretch_columns else QHeaderView.ResizeMode.ResizeToContents
         header.setSectionResizeMode(index, mode)

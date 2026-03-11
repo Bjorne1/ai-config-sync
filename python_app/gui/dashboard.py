@@ -1,5 +1,7 @@
 import json
 
+from ..core.resource_operations import detect_existing_targets, merge_environment_targets
+
 STATE_LABELS = {
     "healthy": "已同步",
     "missing": "目标缺失",
@@ -33,8 +35,12 @@ def _children_count(entry: dict[str, object] | None) -> int:
     return len(children) if isinstance(children, list) else 0
 
 
-def summarize_entries(entries: list[dict[str, object]], configured_tools: list[str]) -> tuple[str, str]:
-    if not configured_tools:
+def _has_assignments(configured_targets: dict[str, list[str]]) -> bool:
+    return any(configured_targets.get(environment_id) for environment_id in configured_targets)
+
+
+def summarize_entries(entries: list[dict[str, object]], configured_targets: dict[str, list[str]]) -> tuple[str, str]:
+    if not _has_assignments(configured_targets):
         return "idle", STATE_LABELS["idle"]
     if not entries:
         return "partial", "已分配但尚无状态明细"
@@ -46,8 +52,10 @@ def summarize_entries(entries: list[dict[str, object]], configured_tools: list[s
 def build_resource_rows(
     kind: str,
     inventory: list[dict[str, object]],
-    assignments: dict[str, list[str]],
+    assignments: dict[str, dict[str, list[str]]],
     statuses: list[dict[str, object]],
+    config: dict[str, object],
+    environment_list: dict[str, object],
 ) -> list[dict[str, object]]:
     scan_index = {item["name"]: item for item in inventory}
     status_index = {item["name"]: item for item in statuses}
@@ -56,8 +64,19 @@ def build_resource_rows(
     for name in names:
         scanned = scan_index.get(name)
         status = status_index.get(name)
-        configured_tools = assignments.get(name) or (status.get("configuredTools") if status else [])
-        summary_state, summary_message = summarize_entries(status.get("entries", []) if status else [], configured_tools)
+        configured_targets = assignments.get(name) or (status.get("configuredTargets") if status else {}) or {}
+        resource = scanned or {
+            "name": name,
+            "path": (status or {}).get("sourcePath") or "",
+            "isDirectory": (status or {}).get("isDirectory", False),
+            "children": [],
+        }
+        detected_targets = detect_existing_targets(config, kind, resource, environment_list)
+        effective_targets = merge_environment_targets(configured_targets, detected_targets)
+        summary_state, summary_message = summarize_entries(
+            status.get("entries", []) if status else [],
+            configured_targets,
+        )
         rows.append(
             {
                 "kind": kind,
@@ -66,7 +85,9 @@ def build_resource_rows(
                 "isDirectory": (scanned or status or {}).get("isDirectory", False),
                 "childrenCount": _children_count(scanned),
                 "scanned": bool(scanned),
-                "configuredTools": configured_tools,
+                "configuredTargets": configured_targets,
+                "detectedTargets": detected_targets,
+                "effectiveTargets": effective_targets,
                 "entries": status.get("entries", []) if status else [],
                 "summaryState": summary_state,
                 "summaryMessage": summary_message,
@@ -121,14 +142,22 @@ def summarize_cleanup(details: list[dict[str, object]]) -> str:
     return f"已处理 {len(details)} 条，成功 {success} 条"
 
 
-def count_configured(assignments: dict[str, list[str]]) -> int:
-    return sum(1 for tools in assignments.values() if tools)
+def count_configured(assignments: dict[str, dict[str, list[str]]]) -> int:
+    return sum(1 for targets in assignments.values() if _has_assignments(targets))
+
+
+def has_wsl_assignments(resources: dict[str, dict[str, dict[str, list[str]]]]) -> bool:
+    for assignments in resources.values():
+        for targets in assignments.values():
+            if targets.get("wsl"):
+                return True
+    return False
 
 
 def overview_stats(snapshot: dict[str, object], issue_count: int, cleanup_candidates: int) -> list[dict[str, str]]:
     managed_skills = count_configured(snapshot["config"]["resources"]["skills"])
     managed_commands = count_configured(snapshot["config"]["resources"]["commands"])
-    enabled_targets = 4 + (4 if snapshot["config"]["environments"]["wsl"]["enabled"] else 0)
+    enabled_targets = 8 if has_wsl_assignments(snapshot["config"]["resources"]) else 4
     mode_label = "复制模式" if snapshot["config"]["syncMode"] == "copy" else "符号链接模式"
     return [
         {"label": "已纳管 Skills", "value": str(managed_skills), "note": f"{len(snapshot['inventory']['skills'])} 个源项"},

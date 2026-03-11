@@ -1,6 +1,7 @@
 from copy import deepcopy
 from pathlib import Path
 
+from . import file_sync
 from .resource_service import (
     expand_resource_items,
     get_configured_resources,
@@ -65,26 +66,23 @@ def _build_states_for_targets(
 
 
 def _iter_enabled_environments(environment_list: dict[str, object]) -> list[dict[str, object]]:
-    return [
-        environment
-        for environment in environment_list.values()
-        if environment["id"] == "windows" or environment["enabled"]
-    ]
+    return list(environment_list.values())
 
 
 def _build_entries_for_resource(
     config: dict[str, object],
     kind: str,
     resource: dict[str, object],
-    configured_tools: list[str],
+    configured_targets: dict[str, list[str]],
     environment_list: dict[str, object],
 ) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
-    for tool_id in TOOL_IDS:
-        if tool_id not in configured_tools:
-            continue
-        items = expand_resource_items(config, kind, resource, tool_id)
-        for environment in _iter_enabled_environments(environment_list):
+    for environment in _iter_enabled_environments(environment_list):
+        environment_tools = configured_targets.get(environment["id"], [])
+        for tool_id in TOOL_IDS:
+            if tool_id not in environment_tools:
+                continue
+            items = expand_resource_items(config, kind, resource, tool_id)
             availability = build_availability(environment, kind, tool_id)
             base_target = environment["targets"][kind][tool_id]
             target_paths = _build_target_paths(base_target, items)
@@ -104,6 +102,41 @@ def _build_entries_for_resource(
     return entries
 
 
+def detect_existing_targets(
+    config: dict[str, object],
+    kind: str,
+    resource: dict[str, object],
+    environment_list: dict[str, object],
+) -> dict[str, list[str]]:
+    detected: dict[str, list[str]] = {}
+    for environment in _iter_enabled_environments(environment_list):
+        tools: list[str] = []
+        for tool_id in TOOL_IDS:
+            availability = build_availability(environment, kind, tool_id)
+            if not availability["available"]:
+                continue
+            items = expand_resource_items(config, kind, resource, tool_id)
+            target_paths = _build_target_paths(environment["targets"][kind][tool_id], items)
+            if any(file_sync.has_path(target_path) for target_path in target_paths):
+                tools.append(tool_id)
+        if tools:
+            detected[environment["id"]] = tools
+    return detected
+
+
+def merge_environment_targets(*target_sets: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for environment_id in ("windows", "wsl"):
+        ordered = [
+            tool_id
+            for tool_id in TOOL_IDS
+            if any(tool_id in targets.get(environment_id, []) for targets in target_sets)
+        ]
+        if ordered:
+            merged[environment_id] = ordered
+    return merged
+
+
 def build_resource_statuses(
     config: dict[str, object],
     kind: str,
@@ -114,19 +147,19 @@ def build_resource_statuses(
     statuses: list[dict[str, object]] = []
     for name in list_managed_names(config, kind, index):
         resource = get_resource_entry(config, kind, name, index)
-        configured_tools = get_configured_resources(config, kind).get(name, [])
+        configured_targets = get_configured_resources(config, kind).get(name, {})
         statuses.append(
             {
                 "kind": kind,
                 "name": name,
                 "sourcePath": resource["path"],
                 "isDirectory": resource["isDirectory"],
-                "configuredTools": configured_tools,
+                "configuredTargets": configured_targets,
                 "entries": _build_entries_for_resource(
                     config,
                     kind,
                     resource,
-                    configured_tools,
+                    configured_targets,
                     environment_list,
                 ),
             }
@@ -139,17 +172,19 @@ def sync_configured_resources(
     kind: str,
     environment_list: dict[str, object],
     requested_names: list[str] | None = None,
+    configured_override: dict[str, dict[str, list[str]]] | None = None,
 ) -> list[dict[str, object]]:
     catalog = get_resource_catalog(config)
     index = catalog["skillIndex"] if kind == "skills" else catalog["commandIndex"]
-    configured = get_configured_resources(config, kind)
-    names = requested_names or list(configured.keys())
+    configured = configured_override if configured_override is not None else get_configured_resources(config, kind)
+    names = requested_names if requested_names is not None else list(configured.keys())
     sync_details: list[dict[str, object]] = []
     for name in names:
         resource = get_resource_entry(config, kind, name, index)
-        for tool_id in configured.get(name, []):
-            items = expand_resource_items(config, kind, resource, tool_id)
-            for environment in _iter_enabled_environments(environment_list):
+        configured_targets = configured.get(name, {})
+        for environment in _iter_enabled_environments(environment_list):
+            for tool_id in configured_targets.get(environment["id"], []):
+                items = expand_resource_items(config, kind, resource, tool_id)
                 availability = build_availability(environment, kind, tool_id)
                 if not availability["available"]:
                     sync_details.append(

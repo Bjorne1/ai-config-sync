@@ -75,22 +75,20 @@ class ConfigPage(QWidget):
         return card
 
     def _build_environment_card(self) -> QWidget:
-        card = CardFrame("WSL 运行时", "启用后会把目标路径扩展到当前选中的发行版。")
+        card = CardFrame("WSL 运行时", "自动探测发行版；是否参与同步由 Skills / Commands 页面的 WSL 勾选决定。")
         form = QFormLayout()
         form.setSpacing(10)
-        self.wsl_enabled = QCheckBox("启用 WSL 同步")
         self.wsl_distro = QComboBox()
         self.wsl_home = QLabel("未解析")
         self.wsl_home.setObjectName("muted")
         self.wsl_error = QLabel("")
         self.wsl_error.setObjectName("muted")
         self.wsl_error.setWordWrap(True)
-        form.addRow("WSL", self.wsl_enabled)
         form.addRow("Distro", self.wsl_distro)
         form.addRow("Home", self.wsl_home)
         form.addRow("Error", self.wsl_error)
         card.body_layout.addLayout(form)
-        self._connect_dirty_signals([self.wsl_enabled, self.wsl_distro])
+        self._connect_dirty_signals([self.wsl_distro])
         return card
 
     def _build_target_stack(self) -> QWidget:
@@ -162,12 +160,11 @@ class ConfigPage(QWidget):
         self.sync_mode.setCurrentText(config["syncMode"])
         self.skills_source.setText(config["sourceDirs"]["skills"])
         self.commands_source.setText(config["sourceDirs"]["commands"])
-        self.wsl_enabled.setChecked(config["environments"]["wsl"]["enabled"])
         self.wsl_distro.blockSignals(True)
         self.wsl_distro.clear()
         self.wsl_distro.addItem("")
         self.wsl_distro.addItems(wsl_runtime["distros"])
-        self.wsl_distro.setCurrentText(config["environments"]["wsl"]["selectedDistro"] or "")
+        self.wsl_distro.setCurrentText(wsl_runtime["selectedDistro"] or config["environments"]["wsl"]["selectedDistro"] or "")
         self.wsl_distro.blockSignals(False)
         self.wsl_home.setText(wsl_runtime["homeDir"] or "未解析")
         self.wsl_error.setText(wsl_runtime["error"] or "")
@@ -194,7 +191,6 @@ class ConfigPage(QWidget):
             "environments": {
                 "windows": {"targets": self._collect_targets("windows")},
                 "wsl": {
-                    "enabled": self.wsl_enabled.isChecked(),
                     "selectedDistro": self.wsl_distro.currentText() or None,
                     "targets": self._collect_targets("wsl"),
                 },
@@ -222,7 +218,13 @@ class ConfigPage(QWidget):
         return {
             "syncMode": config["syncMode"],
             "sourceDirs": deepcopy(config["sourceDirs"]),
-            "environments": deepcopy(config["environments"]),
+            "environments": {
+                "windows": {"targets": deepcopy(config["environments"]["windows"]["targets"])},
+                "wsl": {
+                    "selectedDistro": config["environments"]["wsl"]["selectedDistro"],
+                    "targets": deepcopy(config["environments"]["wsl"]["targets"]),
+                },
+            },
             "commandSubfolderSupport": deepcopy(config["commandSubfolderSupport"]),
         }
 

@@ -31,7 +31,7 @@ class StatusPage(QWidget):
     def _build_environment_card(self) -> QWidget:
         self.environment_card = CardFrame("环境状态", "当前 Windows / WSL 运行时与关键目录映射。")
         self.environment_table = QTableWidget(0, 4)
-        self.environment_table.setHorizontalHeaderLabels(("环境", "启用", "Skills 根", "Commands 根"))
+        self.environment_table.setHorizontalHeaderLabels(("环境", "状态", "Skills 根", "Commands 根"))
         configure_table(self.environment_table, stretch_columns=(2, 3))
         self.environment_table.setMaximumHeight(190)
         self.environment_card.body_layout.addWidget(self.environment_table)
@@ -72,7 +72,7 @@ class StatusPage(QWidget):
         for row_index, environment in enumerate(rows):
             values = [
                 environment["label"],
-                "启用" if environment["enabled"] else "关闭",
+                "可用" if environment["enabled"] else "不可用",
                 environment["targets"]["skills"]["claude"] or environment.get("error") or "不可用",
                 environment["targets"]["commands"]["codex"] or environment.get("error") or "不可用",
             ]

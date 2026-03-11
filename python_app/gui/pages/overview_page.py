@@ -1,6 +1,7 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from ..dashboard import has_wsl_assignments
 from ..widgets import ActionButton, BadgeLabel, CardFrame, HeaderBlock, MetricCard, layout_container
 
 
@@ -50,7 +51,7 @@ class OverviewPage(QWidget):
         return layout_container(grid)
 
     def _build_summary_card(self) -> QWidget:
-        self.summary_card = CardFrame("运行视图", "当前同步模式、WSL 开关和动作入口集中在这一张卡里。")
+        self.summary_card = CardFrame("运行视图", "当前同步模式、WSL 同步矩阵状态和动作入口集中在这一张卡里。")
         self.summary_card.body_layout.addLayout(self._build_badges())
         self.summary_note = QLabel("等待状态回填。")
         self.summary_note.setObjectName("muted")
@@ -83,7 +84,7 @@ class OverviewPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(10)
         self.mode_badge = BadgeLabel("SYMLINK", "healthy")
-        self.wsl_badge = BadgeLabel("WSL OFF", "idle")
+        self.wsl_badge = BadgeLabel("WSL IDLE", "idle")
         self.issue_badge = BadgeLabel("运行平稳", "healthy")
         row.addWidget(self.mode_badge)
         row.addWidget(self.wsl_badge)
@@ -113,9 +114,9 @@ class OverviewPage(QWidget):
     ) -> None:
         self.mode_badge.setText(snapshot["config"]["syncMode"].upper())
         self.mode_badge.set_state("partial" if snapshot["config"]["syncMode"] == "copy" else "healthy")
-        wsl_enabled = snapshot["config"]["environments"]["wsl"]["enabled"]
-        self.wsl_badge.setText("WSL ON" if wsl_enabled else "WSL OFF")
-        self.wsl_badge.set_state("partial" if wsl_enabled else "idle")
+        wsl_active = has_wsl_assignments(snapshot["config"]["resources"])
+        self.wsl_badge.setText("WSL ACTIVE" if wsl_active else "WSL IDLE")
+        self.wsl_badge.set_state("partial" if wsl_active else "idle")
         self.issue_badge.setText("需处理" if issue_count else "运行平稳")
         self.issue_badge.set_state("conflict" if issue_count else "healthy")
         source_text = f"{snapshot['config']['sourceDirs']['skills']}\n{snapshot['config']['sourceDirs']['commands']}"
@@ -125,7 +126,7 @@ class OverviewPage(QWidget):
         self.sync_label.setText(f"{sync_text}\n{log_text}")
         self.summary_note.setText(
             f"当前为 {snapshot['config']['syncMode']} 模式，"
-            f"{'已接入' if wsl_enabled else '未启用'} WSL，"
+            f"{'WSL 已纳入同步矩阵' if wsl_active else 'WSL 尚未纳入同步矩阵'}，"
             f"共检测到 {issue_count} 条待处理异常。"
         )
         for card, stat in zip(self.metrics, stats, strict=True):

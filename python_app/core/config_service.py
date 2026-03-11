@@ -10,6 +10,7 @@ from .tool_definitions import (
     DEFAULT_SYNC_MODE,
     DEFAULT_UPDATE_TOOLS,
     TOOL_IDS,
+    UPDATE_TOOL_TYPES,
     WINDOWS_HOME_TOKEN,
     WSL_HOME_TOKEN,
     build_target_map,
@@ -50,13 +51,35 @@ def normalize_tool_list(items: object) -> list[str]:
     return unique_items
 
 
-def normalize_resource_map(raw_map: object) -> dict[str, list[str]]:
+def normalize_environment_assignments(
+    value: object,
+    legacy_wsl_enabled: bool = False,
+) -> dict[str, list[str]]:
+    if isinstance(value, list):
+        windows_tools = normalize_tool_list(value)
+        wsl_tools = list(windows_tools) if legacy_wsl_enabled else []
+    else:
+        source = value if isinstance(value, dict) else {}
+        windows_tools = normalize_tool_list(source.get("windows"))
+        wsl_tools = normalize_tool_list(source.get("wsl"))
+    normalized = {
+        environment_id: tools
+        for environment_id, tools in (("windows", windows_tools), ("wsl", wsl_tools))
+        if tools
+    }
+    return normalized
+
+
+def normalize_resource_map(
+    raw_map: object,
+    legacy_wsl_enabled: bool = False,
+) -> dict[str, dict[str, list[str]]]:
     entries = raw_map.items() if isinstance(raw_map, dict) else []
-    normalized: dict[str, list[str]] = {}
-    for name, tools in entries:
-        tool_list = normalize_tool_list(tools)
-        if tool_list:
-            normalized[name] = tool_list
+    normalized: dict[str, dict[str, list[str]]] = {}
+    for name, assignments in entries:
+        environment_assignments = normalize_environment_assignments(assignments, legacy_wsl_enabled)
+        if environment_assignments:
+            normalized[name] = environment_assignments
     return normalized
 
 
@@ -82,8 +105,19 @@ def normalize_update_tools(raw_tools: object) -> dict[str, dict[str, str]]:
         return deepcopy(DEFAULT_UPDATE_TOOLS)
     normalized: dict[str, dict[str, str]] = {}
     for name, value in raw_tools.items():
-        if isinstance(value, dict) and value.get("type"):
-            normalized[name] = deepcopy(value)
+        if not isinstance(value, dict):
+            continue
+        tool_type = value.get("type")
+        if tool_type not in UPDATE_TOOL_TYPES:
+            continue
+        if tool_type == "npm":
+            package = str(value.get("package") or "").strip()
+            if package:
+                normalized[name] = {"type": tool_type, "package": package}
+            continue
+        command = str(value.get("command") or "").strip()
+        if command:
+            normalized[name] = {"type": tool_type, "command": command}
     return normalized
 
 
@@ -104,7 +138,6 @@ def create_default_config() -> dict[str, object]:
                 },
             },
             "wsl": {
-                "enabled": False,
                 "selectedDistro": None,
                 "targets": {
                     "skills": build_target_map(WSL_HOME_TOKEN, "skills", "posix"),
@@ -153,7 +186,6 @@ def migrate_legacy_config(legacy_config: object) -> dict[str, object]:
                 },
             },
             "wsl": {
-                "enabled": bool(legacy.get("wslEnabled")),
                 "selectedDistro": legacy.get("wslDistro"),
                 "targets": {
                     "skills": merge_targets(
@@ -168,8 +200,14 @@ def migrate_legacy_config(legacy_config: object) -> dict[str, object]:
             },
         },
         "resources": {
-            "skills": normalize_resource_map(legacy.get("skills")),
-            "commands": normalize_resource_map(legacy.get("commands")),
+            "skills": normalize_resource_map(
+                legacy.get("skills"),
+                legacy_wsl_enabled=bool(legacy.get("wslEnabled")),
+            ),
+            "commands": normalize_resource_map(
+                legacy.get("commands"),
+                legacy_wsl_enabled=bool(legacy.get("wslEnabled")),
+            ),
         },
         "commandSubfolderSupport": normalize_command_subfolder_support(
             legacy.get("commandSubfolderSupport")
@@ -205,7 +243,6 @@ def normalize_config_shape(raw_config: object) -> dict[str, object]:
                 },
             },
             "wsl": {
-                "enabled": bool(wsl.get("enabled")),
                 "selectedDistro": wsl.get("selectedDistro"),
                 "targets": {
                     "skills": merge_targets(defaults["environments"]["wsl"]["targets"]["skills"], wsl.get("targets", {}).get("skills")),
@@ -217,8 +254,14 @@ def normalize_config_shape(raw_config: object) -> dict[str, object]:
             },
         },
         "resources": {
-            "skills": normalize_resource_map(config.get("resources", {}).get("skills")),
-            "commands": normalize_resource_map(config.get("resources", {}).get("commands")),
+            "skills": normalize_resource_map(
+                config.get("resources", {}).get("skills"),
+                legacy_wsl_enabled=bool(wsl.get("enabled")),
+            ),
+            "commands": normalize_resource_map(
+                config.get("resources", {}).get("commands"),
+                legacy_wsl_enabled=bool(wsl.get("enabled")),
+            ),
         },
         "commandSubfolderSupport": normalize_command_subfolder_support(
             config.get("commandSubfolderSupport")
@@ -231,7 +274,9 @@ def parse_config_file(raw_content: str) -> tuple[dict[str, object], bool]:
     parsed = json.loads(raw_content)
     if is_legacy_config(parsed):
         return migrate_legacy_config(parsed), True
-    return normalize_config_shape(parsed), False
+    normalized = normalize_config_shape(parsed)
+    migrated = parsed.get("version") != CONFIG_VERSION
+    return normalized, migrated
 
 
 def ensure_config_directories(config: dict[str, object]) -> None:

@@ -9,9 +9,19 @@ from python_app.core import config_service
 class ConfigServiceTests(unittest.TestCase):
     def test_normalize_resource_map_filters_invalid_tools(self) -> None:
         normalized = config_service.normalize_resource_map(
-            {"demo": ["claude", "invalid", "claude", "codex"]}
+            {"demo": {"windows": ["claude", "invalid", "claude", "codex"], "wsl": ["gemini", "gemini"]}}
         )
-        self.assertEqual(normalized, {"demo": ["claude", "codex"]})
+        self.assertEqual(normalized, {"demo": {"windows": ["claude", "codex"], "wsl": ["gemini"]}})
+
+    def test_normalize_resource_map_migrates_legacy_assignments_when_wsl_enabled(self) -> None:
+        normalized = config_service.normalize_resource_map(
+            {"demo": ["claude", "codex", "claude"]},
+            legacy_wsl_enabled=True,
+        )
+        self.assertEqual(
+            normalized,
+            {"demo": {"windows": ["claude", "codex"], "wsl": ["claude", "codex"]}},
+        )
 
     def test_load_config_creates_default_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -21,7 +31,7 @@ class ConfigServiceTests(unittest.TestCase):
                 with mock.patch.object(config_service, "CONFIG_FILE", config_file):
                     config = config_service.load_config()
                     self.assertTrue(config_file.exists())
-        self.assertEqual(config["version"], 2)
+        self.assertEqual(config["version"], 3)
         self.assertIn("skills", config["sourceDirs"])
 
 

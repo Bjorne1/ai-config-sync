@@ -29,14 +29,6 @@ def build_wsl_runtime(config: dict[str, object], deps: dict[str, object] | None 
         **(deps or {}),
     }
     wsl_config = config["environments"]["wsl"]
-    if not wsl_config["enabled"] and not wsl_config["selectedDistro"]:
-        return {
-            "available": False,
-            "distros": [],
-            "selectedDistro": None,
-            "homeDir": None,
-            "error": None,
-        }
     try:
         distros = api["list_wsl_distros"]()
         default_distro = api["get_default_wsl_distro"]()
@@ -50,12 +42,20 @@ def build_wsl_runtime(config: dict[str, object], deps: dict[str, object] | None 
             "homeDir": None,
             "error": str(error),
         }
+    if not distros:
+        error = "未发现 WSL 发行版"
+    elif not selected_distro:
+        error = "未能解析默认 WSL 发行版"
+    elif not home_dir:
+        error = "未能解析 WSL 主目录"
+    else:
+        error = None
     return {
         "available": bool(selected_distro and home_dir),
         "distros": distros,
         "selectedDistro": selected_distro,
         "homeDir": home_dir,
-        "error": None,
+        "error": error,
     }
 
 
@@ -79,21 +79,21 @@ def build_environment_list(config: dict[str, object], deps: dict[str, object] | 
         },
         "wsl": {
             "id": "wsl",
-            "enabled": bool(config["environments"]["wsl"]["enabled"]),
+            "enabled": bool(wsl_runtime["selectedDistro"] or wsl_runtime["distros"]),
             "label": f"WSL · {wsl_runtime['selectedDistro']}" if wsl_runtime["selectedDistro"] else "WSL",
             "rawTargets": config["environments"]["wsl"]["targets"],
             "roots": resolved["wsl"]["roots"],
             "targets": resolved["wsl"]["targets"],
-            "error": wsl_runtime["error"] if config["environments"]["wsl"]["enabled"] else None,
+            "error": wsl_runtime["error"],
             "meta": wsl_runtime,
         },
     }
 
 
 def build_availability(environment: dict[str, object], kind: str, tool_id: str) -> dict[str, object]:
-    if environment["id"] == "wsl" and environment["enabled"] and environment["error"]:
+    if environment["id"] == "wsl" and environment["error"]:
         return {"available": False, "state": "environment_error", "message": environment["error"]}
-    if environment["id"] == "wsl" and environment["enabled"] and not environment["meta"]["available"]:
+    if environment["id"] == "wsl" and not environment["meta"]["available"]:
         return {
             "available": False,
             "state": "environment_error",

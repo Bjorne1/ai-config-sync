@@ -1,9 +1,9 @@
 {
-  "version": 2,
-  "syncMode": "symlink",
+  "version": 3,
+  "syncMode": "copy",
   "sourceDirs": {
-    "skills": "/home/wcs/projects/ai-config-sync/skills",
-    "commands": "/home/wcs/projects/ai-config-sync/commands"
+    "skills": "D:\\wcs_project\\ai-config-sync\\skills",
+    "commands": "D:\\wcs_project\\ai-config-sync\\commands"
   },
   "environments": {
     "windows": {
@@ -24,8 +24,7 @@
       }
     },
     "wsl": {
-      "enabled": false,
-      "selectedDistro": null,
+      "selectedDistro": "Ubuntu",
       "targets": {
         "skills": {
           "claude": "$HOME/.claude/skills",
@@ -45,33 +44,57 @@
   "resources": {
     "skills": {},
     "commands": {
-      "brainstorming.md": [
-        "claude",
-        "codex",
-        "gemini"
-      ],
-      "commit": [
-        "claude",
-        "codex",
-        "gemini"
-      ],
-      "gudaspec": [
-        "claude",
-        "codex",
-        "gemini"
-      ]
+      "brainstorming.md": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      },
+      "commit": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      },
+      "gudaspec": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      }
     }
   },
   "commandSubfolderSupport": {
     "default": false,
     "tools": {
-      "claude": true
+      "claude": true,
+      "codex": false,
+      "gemini": false,
+      "antigravity": false
     }
   },
   "updateTools": {
     "Claude Code": {
-      "type": "custom",
-      "command": "claude update"
+      "type": "npm",
+      "package": "@anthropic-ai/claude-code"
     },
     "Codex": {
       "type": "npm",

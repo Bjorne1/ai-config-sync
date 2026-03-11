@@ -27,7 +27,7 @@ def get_resource_catalog(config: dict[str, object]) -> dict[str, object]:
     }
 
 
-def get_configured_resources(config: dict[str, object], kind: str) -> dict[str, list[str]]:
+def get_configured_resources(config: dict[str, object], kind: str) -> dict[str, dict[str, list[str]]]:
     return config["resources"].get(kind, {})
 
 

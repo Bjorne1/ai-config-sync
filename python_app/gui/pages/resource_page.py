@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -14,10 +15,22 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.tool_definitions import TOOL_IDS
-from ..dashboard import entry_summary, serialize
-from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table
+from ..dashboard import STATE_LABELS, STATE_PRIORITY, entry_summary, serialize
+from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, HeaderBlock, configure_table
 
-TABLE_HEADERS = ("选中", "名称", "类型", "摘要", "路径", "状态", "Claude", "Codex", "Gemini", "Antigravity")
+MATRIX_COLUMNS = (
+    ("windows", "claude", "CLAUDE", "Windows / Claude"),
+    ("windows", "codex", "CODEX", "Windows / Codex"),
+    ("windows", "gemini", "GEMINI", "Windows / Gemini"),
+    ("windows", "antigravity", "AG", "Windows / Antigravity"),
+    ("wsl", "claude", "CLAUDE", "WSL / Claude"),
+    ("wsl", "codex", "CODEX", "WSL / Codex"),
+    ("wsl", "gemini", "GEMINI", "WSL / Gemini"),
+    ("wsl", "antigravity", "AG", "WSL / Antigravity"),
+)
+TABLE_HEADERS = ("选中", "名称", "类型", "摘要", "路径", "状态", *(column[2] for column in MATRIX_COLUMNS))
+MATRIX_GROUPS = (("WIN", (6, 7, 8, 9)), ("WSL", (10, 11, 12, 13)))
+STATUS_ORDER = tuple(state for state, _priority in sorted(STATE_PRIORITY.items(), key=lambda item: item[1]))
 
 
 class ResourcePage(QWidget):
@@ -30,8 +43,9 @@ class ResourcePage(QWidget):
         self.kind = kind
         self.rows: list[dict[str, object]] = []
         self.selected_names: set[str] = set()
-        self.assignments: dict[str, list[str]] = {}
-        self._initial_assignments: dict[str, list[str]] = {}
+        self.assignments: dict[str, dict[str, list[str]]] = {}
+        self._initial_assignments: dict[str, dict[str, list[str]]] = {}
+        self._updating_table = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -77,15 +91,38 @@ class ResourcePage(QWidget):
 
     def _build_table_card(self, title: str) -> QWidget:
         card = CardFrame(f"{title} 清单", "按状态、路径和工具分配检查当前资源。")
-        self.table = QTableWidget(0, len(TABLE_HEADERS))
+        self.table = FrozenRightTableWidget(0, len(TABLE_HEADERS), tuple(range(6, len(TABLE_HEADERS))), MATRIX_GROUPS)
         self.table.setHorizontalHeaderLabels(TABLE_HEADERS)
-        configure_table(self.table, stretch_columns=(3, 4, 5))
-        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.table.setColumnWidth(0, 56)
-        self.table.setColumnWidth(1, 180)
-        self.table.setColumnWidth(2, 72)
+        configure_table(self.table, stretch_columns=(4,))
+        frozen_view = self.table.frozen_view()
+        configure_table(frozen_view)
+        header = self.table.horizontalHeader()
+        fixed_columns = {
+            0: 56,
+            1: 220,
+            2: 80,
+            3: 260,
+            5: 180,
+        }
+        for column, width in fixed_columns.items():
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(column, width)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        matrix_header = frozen_view.horizontalHeader()
         for column in range(6, len(TABLE_HEADERS)):
-            self.table.setColumnWidth(column, 72)
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            matrix_header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(column, 78)
+            frozen_view.setColumnWidth(column, 78)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        frozen_view.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        for column, label in enumerate(TABLE_HEADERS):
+            item = self.table.horizontalHeaderItem(column)
+            if item:
+                item.setToolTip(label if column < 6 else MATRIX_COLUMNS[column - 6][3])
+        self.table.itemChanged.connect(self._handle_item_changed)
+        self.table.sync_frozen_view()
         card.body_layout.addWidget(self.table)
         return card
 
@@ -99,17 +136,35 @@ class ResourcePage(QWidget):
         self.save_requested.emit(self.kind, self.get_assignments())
 
     def _emit_sync(self) -> None:
-        self.sync_requested.emit(self.kind, self.get_selected_names())
+        self.sync_requested.emit(
+            self.kind,
+            {
+                "names": self.get_selected_names(),
+                "assignments": self.get_assignments(),
+            },
+        )
 
     def set_rows(self, rows: list[dict[str, object]]) -> None:
         self.rows = deepcopy(rows)
-        self.assignments = {row["name"]: list(row["configuredTools"]) for row in rows if row["configuredTools"]}
-        self._initial_assignments = deepcopy(self.assignments)
+        self.assignments = {
+            row["name"]: deepcopy(row["effectiveTargets"])
+            for row in rows
+            if self._has_assignments(row["effectiveTargets"])
+        }
+        self._initial_assignments = {
+            row["name"]: deepcopy(row["configuredTargets"])
+            for row in rows
+            if self._has_assignments(row["configuredTargets"])
+        }
         self.selected_names &= {row["name"] for row in rows}
         self._rebuild_table()
 
-    def get_assignments(self) -> dict[str, list[str]]:
-        return {name: tools for name, tools in self.assignments.items() if tools}
+    def get_assignments(self) -> dict[str, dict[str, list[str]]]:
+        return {
+            name: targets
+            for name, targets in self.assignments.items()
+            if self._has_assignments(targets)
+        }
 
     def get_selected_names(self) -> list[str]:
         visible = {row["name"] for row in self._filtered_rows()}
@@ -122,9 +177,17 @@ class ResourcePage(QWidget):
 
     def _rebuild_table(self) -> None:
         rows = self._filtered_rows()
+        self._updating_table = True
+        self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             self._fill_row(row_index, row)
+        self.table.blockSignals(False)
+        self._updating_table = False
+        self.table.sync_frozen_view()
+        self._update_meta()
+
+    def _update_meta(self) -> None:
         dirty = serialize(self.assignments) != serialize(self._initial_assignments)
         self.meta.setText(f"{len(self.rows)} 条记录 · {'存在未保存分配' if dirty else '分配已同步'}")
 
@@ -132,36 +195,37 @@ class ResourcePage(QWidget):
         self._set_select_cell(row_index, row["name"])
         type_label = "目录" if row["isDirectory"] else "文件"
         path_text = row["path"] or "源路径不可用"
-        status_text = entry_summary(row["entries"])
+        status_text = self._compact_entry_summary(row["entries"])
+        status_tooltip = entry_summary(row["entries"])
         values = [row["name"], type_label, row["summaryMessage"], path_text, status_text]
         for column, value in enumerate(values, start=1):
             item = QTableWidgetItem(value)
             item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            item.setToolTip(status_tooltip if column == 5 else value)
             self.table.setItem(row_index, column, item)
-        for offset, tool_id in enumerate(TOOL_IDS, start=6):
-            self.table.setCellWidget(row_index, offset, self._tool_checkbox(row["name"], tool_id))
+        for offset, (environment_id, tool_id, _label, _tooltip) in enumerate(MATRIX_COLUMNS):
+            item = QTableWidgetItem()
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked
+                if tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
+                else Qt.CheckState.Unchecked
+            )
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setToolTip(f"{'Windows' if environment_id == 'windows' else 'WSL'} / {tool_id}")
+            self.table.setItem(row_index, offset + 6, item)
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
         checkbox = QCheckBox()
         checkbox.setChecked(name in self.selected_names)
         checkbox.stateChanged.connect(lambda state, item=name: self._toggle_selected(item, state))
         wrapper = QWidget()
+        wrapper.setToolTip("勾选后参与“同步勾选项”")
         layout = QHBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(checkbox)
         self.table.setCellWidget(row_index, 0, wrapper)
-
-    def _tool_checkbox(self, name: str, tool_id: str) -> QWidget:
-        checkbox = QCheckBox()
-        checkbox.setChecked(tool_id in self.assignments.get(name, []))
-        checkbox.stateChanged.connect(lambda state, item=name, tool=tool_id: self._toggle_tool(item, tool, state))
-        wrapper = QWidget()
-        layout = QHBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(checkbox)
-        return wrapper
 
     def _toggle_selected(self, name: str, state: int) -> None:
         if state == Qt.CheckState.Checked.value:
@@ -169,8 +233,9 @@ class ResourcePage(QWidget):
             return
         self.selected_names.discard(name)
 
-    def _toggle_tool(self, name: str, tool_id: str, state: int) -> None:
-        tools = list(self.assignments.get(name, []))
+    def _toggle_tool(self, name: str, environment_id: str, tool_id: str, state: int) -> None:
+        targets = deepcopy(self.assignments.get(name, {}))
+        tools = list(targets.get(environment_id, []))
         checked = state == Qt.CheckState.Checked.value
         if checked and tool_id not in tools:
             tools.append(tool_id)
@@ -178,7 +243,43 @@ class ResourcePage(QWidget):
             tools.remove(tool_id)
         ordered = [tool for tool in TOOL_IDS if tool in tools]
         if ordered:
-            self.assignments[name] = ordered
+            targets[environment_id] = ordered
+        else:
+            targets.pop(environment_id, None)
+        if self._has_assignments(targets):
+            self.assignments[name] = targets
         else:
             self.assignments.pop(name, None)
-        self._rebuild_table()
+        self._update_meta()
+
+    def _handle_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._updating_table or item.column() < 6:
+            return
+        visible_rows = self._filtered_rows()
+        row = item.row()
+        if row >= len(visible_rows):
+            return
+        resource = visible_rows[row]
+        environment_id, tool_id, _label, _tooltip = MATRIX_COLUMNS[item.column() - 6]
+        self._toggle_tool(resource["name"], environment_id, tool_id, item.checkState().value)
+
+    def _has_assignments(self, targets: dict[str, list[str]]) -> bool:
+        return any(targets.get(environment_id) for environment_id in ("windows", "wsl"))
+
+    def _compact_entry_summary(self, entries: list[dict[str, object]]) -> str:
+        if not entries:
+            return "等待状态回填"
+        if len(entries) == 1:
+            entry = entries[0]
+            state = STATE_LABELS.get(entry["state"], entry["state"])
+            environment_label = "WIN" if entry["environmentId"] == "windows" else "WSL"
+            return f"{environment_label}/{entry['toolId'].upper()} · {state}"
+        counts: dict[str, int] = {}
+        for entry in entries:
+            state = entry["state"]
+            counts[state] = counts.get(state, 0) + 1
+        return " · ".join(
+            f"{STATE_LABELS.get(state, state)} {counts[state]}"
+            for state in STATUS_ORDER
+            if counts.get(state)
+        )

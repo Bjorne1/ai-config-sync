@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
     save_config_requested = Signal(object)
     cleanup_requested = Signal()
     update_tools_requested = Signal()
+    save_tool_definitions_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
         self.config_page.save_requested.connect(self.save_config_requested.emit)
         self.cleanup_page.cleanup_requested.connect(self.cleanup_requested.emit)
         self.tools_page.update_requested.connect(self.update_tools_requested.emit)
+        self.tools_page.definitions_save_requested.connect(self.save_tool_definitions_requested.emit)
         self.set_current_page("overview")
 
     def set_current_page(self, key: str) -> None:
@@ -185,7 +187,7 @@ class MainWindow(QMainWindow):
         self.busy = {**busy}
         self._refresh_busy()
 
-    def get_assignments(self, kind: str) -> dict[str, list[str]]:
+    def get_assignments(self, kind: str) -> dict[str, dict[str, list[str]]]:
         page = self.skills_page if kind == "skills" else self.commands_page
         return page.get_assignments()
 
@@ -214,6 +216,8 @@ class MainWindow(QMainWindow):
             self.snapshot["inventory"][kind],
             self.snapshot["config"]["resources"][kind],
             self.snapshot["status"][kind],
+            self.snapshot["config"],
+            self.snapshot["status"]["environments"],
         )
 
     def _refresh_busy(self) -> None:
@@ -222,7 +226,7 @@ class MainWindow(QMainWindow):
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("saveCommands"), self._busy("syncCommands"))
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
         self.cleanup_page.set_busy(self._busy("cleanup"))
-        self.tools_page.set_busy(self._busy("updateTools"))
+        self.tools_page.set_busy(self._busy("updateTools"), self._busy("saveToolDefinitions"))
 
     def _busy(self, key: str) -> bool:
         if key in self.busy:

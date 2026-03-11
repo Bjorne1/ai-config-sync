@@ -28,18 +28,29 @@ def expand_wsl_path(input_path: str, home_dir: str | None) -> str:
 
 
 def _run_text_command(args: list[str]) -> str:
-    completed = subprocess.run(args, capture_output=True, check=True, text=True)
-    return completed.stdout
+    completed = subprocess.run(args, capture_output=True, check=True)
+    stdout = completed.stdout
+    text = stdout.decode("utf-8", errors="ignore")
+    if "\x00" in text:
+        utf16_text = stdout.decode("utf-16-le", errors="ignore")
+        if utf16_text and utf16_text.count("\x00") < text.count("\x00"):
+            text = utf16_text
+    return text.replace("\x00", "")
+
+
+def _clean_lines(output: str) -> list[str]:
+    sanitized = output.replace("\x00", "")
+    return [line.strip() for line in sanitized.splitlines() if line.strip()]
 
 
 def list_wsl_distros(executor=_run_text_command) -> list[str]:
     output = executor(["wsl.exe", "-l", "-q"])
-    return [line.replace("\x00", "").strip() for line in output.splitlines() if line.strip()]
+    return _clean_lines(output)
 
 
 def get_default_wsl_distro(executor=_run_text_command) -> str | None:
     output = executor(["wsl.exe", "-l", "-v"])
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    lines = _clean_lines(output)
     default_line = next((line for line in lines if line.startswith("*")), None)
     if not default_line:
         return None
@@ -51,7 +62,8 @@ def get_wsl_home_dir(distro: str, executor=_run_text_command) -> str:
     if not distro:
         raise RuntimeError("A WSL distro must be selected before resolving its home directory.")
     output = executor(["wsl.exe", "-d", distro, "sh", "-lc", 'printf %s "$HOME"'])
-    return output.strip()
+    lines = _clean_lines(output)
+    return lines[0] if lines else ""
 
 
 def linux_path_to_unc(distro: str, linux_path: str) -> str:
@@ -94,7 +106,7 @@ def resolve_environment_targets(
             "roots": build_root_map(windows_home, "windows"),
         },
         "wsl": {
-            "enabled": bool(config["environments"]["wsl"]["enabled"] and selected_distro and wsl_home),
+            "enabled": bool(selected_distro and wsl_home),
             "selectedDistro": selected_distro,
             "targets": resolved_wsl,
             "roots": build_root_map(linux_path_to_unc(selected_distro, wsl_home), "windows")

@@ -21,7 +21,7 @@ from .updater import update_all_tools
 def _replace_resource_map(
     config: dict[str, object],
     kind: str,
-    assignments: dict[str, list[str]],
+    assignments: dict[str, dict[str, list[str]]],
 ) -> dict[str, object]:
     return save_config(
         normalize_config_shape(
@@ -99,7 +99,7 @@ class AppService:
     def replace_resource_map(
         self,
         kind: str,
-        assignments: dict[str, list[str]],
+        assignments: dict[str, dict[str, list[str]]],
     ) -> dict[str, object]:
         return _replace_resource_map(self.deps.load_config(), kind, assignments)
 
@@ -115,10 +115,11 @@ class AppService:
         self,
         kind: str,
         names: list[str] | None = None,
+        assignments: dict[str, dict[str, list[str]]] | None = None,
     ) -> list[dict[str, object]]:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
-        return sync_configured_resources(config, kind, environments, names)
+        return sync_configured_resources(config, kind, environments, names, assignments)
 
     def update_tools(self) -> list[dict[str, object]]:
         config = self.deps.load_config()

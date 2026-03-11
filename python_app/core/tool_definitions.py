@@ -40,19 +40,21 @@ TOOL_LAYOUTS = MappingProxyType(
 
 TOOL_IDS = tuple(TOOL_LAYOUTS.keys())
 TOOL_KIND_IDS = ("skills", "commands")
+ENVIRONMENT_IDS = ("windows", "wsl")
 DEFAULT_COMMAND_SUBFOLDER_SUPPORT = {
     "default": False,
     "tools": {"claude": True},
 }
+UPDATE_TOOL_TYPES = ("npm", "npx", "custom")
 DEFAULT_UPDATE_TOOLS = {
-    "Claude Code": {"type": "custom", "command": "claude update"},
+    "Claude Code": {"type": "npm", "package": "@anthropic-ai/claude-code"},
     "Codex": {"type": "npm", "package": "@openai/codex"},
     "OpenSpec": {"type": "npm", "package": "@fission-ai/openspec"},
     "Auggie": {"type": "npm", "package": "@augmentcode/auggie"},
     "ace-tool": {"type": "npm", "package": "ace-tool"},
 }
 DEFAULT_SYNC_MODE = "symlink"
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 WINDOWS_HOME_TOKEN = "%USERPROFILE%"
 WSL_HOME_TOKEN = "$HOME"
 

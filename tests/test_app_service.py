@@ -13,7 +13,7 @@ def _create_config(root: Path) -> dict[str, object]:
     (skills_dir / "demo-skill").mkdir()
     (commands_dir / "brainstorming.md").write_text("# test", encoding="utf-8")
     return {
-        "version": 2,
+        "version": 3,
         "syncMode": "copy",
         "sourceDirs": {
             "skills": str(skills_dir),
@@ -38,7 +38,6 @@ def _create_config(root: Path) -> dict[str, object]:
                 },
             },
             "wsl": {
-                "enabled": False,
                 "selectedDistro": None,
                 "targets": {
                     "skills": {
@@ -57,8 +56,8 @@ def _create_config(root: Path) -> dict[str, object]:
             },
         },
         "resources": {
-            "skills": {"demo-skill": ["claude"]},
-            "commands": {"brainstorming.md": ["codex"]},
+            "skills": {"demo-skill": {"windows": ["claude"]}},
+            "commands": {"brainstorming.md": {"windows": ["codex"]}},
         },
         "commandSubfolderSupport": {"default": False, "tools": {"claude": True}},
         "updateTools": {"Codex": {"type": "npm", "package": "@openai/codex"}},
@@ -82,6 +81,32 @@ class AppServiceTests(unittest.TestCase):
             status = app_service.get_status()
         self.assertEqual(status["skills"][0]["name"], "demo-skill")
         self.assertEqual(status["commands"][0]["name"], "brainstorming.md")
+
+    def test_sync_resources_accepts_assignment_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _create_config(root)
+            config["resources"]["skills"] = {}
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                }
+            )
+
+            result = app_service.sync_resources(
+                "skills",
+                ["demo-skill"],
+                {"demo-skill": {"windows": ["claude"]}},
+            )
+
+            target_path = root / "targets" / "claude" / "skills" / "demo-skill"
+            self.assertTrue(target_path.exists())
+            self.assertEqual(len(result), 1)
+            self.assertTrue(result[0]["success"])
 
 
 if __name__ == "__main__":

@@ -20,13 +20,13 @@ def get_npm_version(package_name: str) -> str | None:
 
 def update_npm_tool(package_name: str) -> bool:
     try:
-        completed = subprocess.run(["npm", "update", "-g", package_name], text=True)
+        completed = subprocess.run(["npm", "install", "-g", f"{package_name}@latest"], text=True)
     except OSError:
         return False
     return completed.returncode == 0
 
 
-def update_custom_tool(command: str) -> bool:
+def update_command_tool(command: str) -> bool:
     try:
         completed = subprocess.run(command, shell=True, text=True)
     except OSError:
@@ -52,7 +52,7 @@ def update_all_tools(tools: dict[str, dict[str, str]], on_progress=None) -> list
         if config["type"] == "npm":
             result["success"] = update_npm_tool(config["package"])
             result["versionAfter"] = get_npm_version(config["package"])
-        elif config["type"] == "custom":
-            result["success"] = update_custom_tool(config["command"])
+        elif config["type"] in {"npx", "custom"}:
+            result["success"] = update_command_tool(config["command"])
         results.append(result)
     return results
