@@ -1,15 +1,20 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFrame,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
+    QLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from .theme import STATE_COLORS, create_app_font, create_mono_font
+from .theme import STATE_COLORS, create_mono_font
 
 
 class CardFrame(QFrame):
@@ -37,13 +42,14 @@ class MetricCard(QFrame):
     def __init__(self, label: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("metricCard")
+        self.setMinimumHeight(152)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(8)
         self.label = QLabel(label)
         self.label.setObjectName("eyebrow")
         self.value = QLabel("--")
-        self.value.setFont(create_mono_font(22))
+        self.value.setFont(create_mono_font(24))
         self.note = QLabel("")
         self.note.setObjectName("muted")
         self.note.setWordWrap(True)
@@ -130,3 +136,31 @@ class ToolTargetGrid(CardFrame):
         self.grid.addWidget(label, row, 0)
         self.grid.addWidget(editor, row, 1)
         self._inputs[tool_id] = label
+
+
+def layout_container(layout: QLayout, max_vertical: bool = True) -> QWidget:
+    container = QWidget()
+    container.setLayout(layout)
+    vertical_policy = QSizePolicy.Policy.Maximum if max_vertical else QSizePolicy.Policy.Expanding
+    container.setSizePolicy(QSizePolicy.Policy.Expanding, vertical_policy)
+    return container
+
+
+def configure_table(table: QTableWidget, stretch_columns: tuple[int, ...] = ()) -> None:
+    table.setAlternatingRowColors(True)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    table.setWordWrap(False)
+    table.setShowGrid(False)
+    table.setCornerButtonEnabled(False)
+    table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+    table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+    table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(42)
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    for index in range(table.columnCount()):
+        mode = QHeaderView.ResizeMode.Stretch if index in stretch_columns else QHeaderView.ResizeMode.ResizeToContents
+        header.setSectionResizeMode(index, mode)

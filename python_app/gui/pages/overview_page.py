@@ -1,7 +1,7 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from ..widgets import ActionButton, BadgeLabel, CardFrame, HeaderBlock, MetricCard
+from ..widgets import ActionButton, BadgeLabel, CardFrame, HeaderBlock, MetricCard, layout_container
 
 
 class OverviewPage(QWidget):
@@ -13,27 +13,71 @@ class OverviewPage(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        layout = QGridLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        self.header = HeaderBlock(
-            "01 / Overview",
-            "编辑部总控台",
-            "工业灰 + 安全橙的作业面板，把资源、环境和最近动作放在同一张工单上。",
+        layout.addWidget(
+            HeaderBlock(
+                "01 / Overview",
+                "编辑部总控台",
+                "工业灰 + 安全橙的作业面板，把资源、环境和最近动作压缩进一张更紧凑的工单。",
+            )
         )
-        layout.addWidget(self.header, 0, 0, 1, 2)
-        self.summary_card = CardFrame("运行视图", "当前同步模式、源目录和最近动作。")
-        self.metric_grid = QGridLayout()
-        self.metric_grid.setSpacing(14)
+        layout.addWidget(self._build_metric_strip())
+        layout.addWidget(self._build_board())
+        layout.addStretch(1)
+
+    def _build_metric_strip(self) -> QWidget:
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
         self.metrics = [MetricCard(label) for label in ("已纳管 Skills", "已纳管 Commands", "目标通道", "异常条目")]
         for index, card in enumerate(self.metrics):
-            self.metric_grid.addWidget(card, index // 2, index % 2)
+            grid.addWidget(card, 0, index)
+            grid.setColumnStretch(index, 1)
+        return layout_container(grid)
+
+    def _build_board(self) -> QWidget:
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
+        grid.setColumnStretch(0, 7)
+        grid.setColumnStretch(1, 5)
+        grid.addWidget(self._build_summary_card(), 0, 0)
+        grid.addWidget(self._build_context_column(), 0, 1)
+        return layout_container(grid)
+
+    def _build_summary_card(self) -> QWidget:
+        self.summary_card = CardFrame("运行视图", "当前同步模式、WSL 开关和动作入口集中在这一张卡里。")
         self.summary_card.body_layout.addLayout(self._build_badges())
+        self.summary_note = QLabel("等待状态回填。")
+        self.summary_note.setObjectName("muted")
+        self.summary_note.setWordWrap(True)
+        self.summary_card.body_layout.addWidget(self.summary_note)
         self.summary_card.body_layout.addLayout(self._build_actions())
-        self.summary_card.body_layout.addWidget(self._label_block("Source Deck"))
-        self.summary_card.body_layout.addWidget(self._label_block("最近同步"))
-        layout.addWidget(self.summary_card, 1, 0)
-        layout.addLayout(self.metric_grid, 1, 1)
+        return self.summary_card
+
+    def _build_context_column(self) -> QWidget:
+        column = QVBoxLayout()
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(12)
+        column.addWidget(self._build_context_card("Source Deck", "当前技能源与命令源。", "source"))
+        column.addWidget(self._build_context_card("最近同步", "最近批次摘要与最后一条动作。", "sync"))
+        return layout_container(column)
+
+    def _build_context_card(self, title: str, detail: str, key: str) -> QWidget:
+        card = CardFrame(title, detail)
+        label = QLabel("--")
+        label.setObjectName("muted")
+        label.setWordWrap(True)
+        card.body_layout.addWidget(label)
+        if key == "source":
+            self.source_label = label
+        else:
+            self.sync_label = label
+        return card
 
     def _build_badges(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -59,19 +103,6 @@ class OverviewPage(QWidget):
         row.addStretch(1)
         return row
 
-    def _label_block(self, title: str) -> QWidget:
-        block = CardFrame(title)
-        block.setObjectName("metricCard")
-        label = QLabel("--")
-        label.setObjectName("muted")
-        label.setWordWrap(True)
-        if title == "Source Deck":
-            self.source_label = label
-        else:
-            self.sync_label = label
-        block.body_layout.addWidget(label)
-        return block
-
     def set_context(
         self,
         stats: list[dict[str, str]],
@@ -82,16 +113,21 @@ class OverviewPage(QWidget):
     ) -> None:
         self.mode_badge.setText(snapshot["config"]["syncMode"].upper())
         self.mode_badge.set_state("partial" if snapshot["config"]["syncMode"] == "copy" else "healthy")
-        self.wsl_badge.setText("WSL ON" if snapshot["config"]["environments"]["wsl"]["enabled"] else "WSL OFF")
-        self.wsl_badge.set_state("partial" if snapshot["config"]["environments"]["wsl"]["enabled"] else "idle")
+        wsl_enabled = snapshot["config"]["environments"]["wsl"]["enabled"]
+        self.wsl_badge.setText("WSL ON" if wsl_enabled else "WSL OFF")
+        self.wsl_badge.set_state("partial" if wsl_enabled else "idle")
         self.issue_badge.setText("需处理" if issue_count else "运行平稳")
         self.issue_badge.set_state("conflict" if issue_count else "healthy")
-        self.source_label.setText(
-            f"{snapshot['config']['sourceDirs']['skills']}\n{snapshot['config']['sourceDirs']['commands']}"
-        )
-        log_text = "尚未执行动作" if not latest_log else f"{latest_log['label']} · {latest_log['detail']}"
+        source_text = f"{snapshot['config']['sourceDirs']['skills']}\n{snapshot['config']['sourceDirs']['commands']}"
+        self.source_label.setText(source_text)
         sync_text = last_sync_summary or "尚未执行同步批次"
+        log_text = "尚未执行动作" if not latest_log else f"{latest_log['label']} · {latest_log['detail']}"
         self.sync_label.setText(f"{sync_text}\n{log_text}")
+        self.summary_note.setText(
+            f"当前为 {snapshot['config']['syncMode']} 模式，"
+            f"{'已接入' if wsl_enabled else '未启用'} WSL，"
+            f"共检测到 {issue_count} 条待处理异常。"
+        )
         for card, stat in zip(self.metrics, stats, strict=True):
             card.set_value(stat["value"], stat["note"])
 

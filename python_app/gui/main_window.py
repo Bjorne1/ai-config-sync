@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         root = QWidget()
+        root.setObjectName("appRoot")
         self.setCentralWidget(root)
         layout = QHBoxLayout(root)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -65,14 +66,24 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(248)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(18, 20, 18, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
+        hero = QFrame()
+        hero.setObjectName("sidebarHero")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(16, 16, 16, 16)
+        hero_layout.setSpacing(8)
         title = QLabel("Boss Console\nRenderer")
-        title.setStyleSheet("color: white; font-size: 26px; font-weight: 700;")
+        title.setObjectName("sidebarTitle")
+        title.setWordWrap(True)
         intro = QLabel("Industrial grey + safety orange.\n高密度视图，不牺牲可读性。")
-        intro.setStyleSheet("color: #cbd5e1;")
+        intro.setObjectName("sidebarIntro")
         intro.setWordWrap(True)
-        layout.addWidget(title)
-        layout.addWidget(intro)
+        hero_layout.addWidget(title)
+        hero_layout.addWidget(intro)
+        layout.addWidget(hero)
+        section_label = QLabel("Navigation")
+        section_label.setObjectName("sidebarSectionLabel")
+        layout.addWidget(section_label)
         self.nav_buttons: dict[str, NavButton] = {}
         for key, label in zip(PAGE_KEYS, PAGE_LABELS, strict=True):
             button = NavButton(label)
@@ -84,6 +95,7 @@ class MainWindow(QMainWindow):
 
     def _build_workspace(self) -> QWidget:
         wrapper = QWidget()
+        wrapper.setObjectName("workspace")
         layout = QVBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
@@ -93,6 +105,7 @@ class MainWindow(QMainWindow):
         self.error_banner.setStyleSheet("border: 1px solid #b91c1c; border-radius: 14px; padding: 10px 12px; background: #fee2e2; color: #991b1b;")
         layout.addWidget(self.error_banner)
         scroll = QScrollArea()
+        scroll.setObjectName("workspaceScroll")
         scroll.setWidgetResizable(True)
         layout.addWidget(scroll, 1)
         container = QWidget()
@@ -100,6 +113,7 @@ class MainWindow(QMainWindow):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         self.pages = QStackedWidget()
+        self.pages.setObjectName("pageStack")
         container_layout.addWidget(self.pages)
         self._create_pages()
         return wrapper

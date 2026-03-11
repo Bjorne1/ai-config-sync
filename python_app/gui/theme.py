@@ -51,13 +51,19 @@ def tint(color: str, alpha: int) -> str:
 def build_stylesheet() -> str:
     return f"""
     QWidget {{
-        background: {WINDOW_BACKGROUND};
         color: {TEXT_PRIMARY};
         font-family: 'Fira Sans', 'Segoe UI', sans-serif;
         font-size: 13px;
     }}
-    QMainWindow {{
+    QLabel {{
+        background: transparent;
+    }}
+    QMainWindow, QWidget#appRoot, QWidget#workspace {{
         background: {WINDOW_BACKGROUND};
+    }}
+    QStackedWidget#pageStack {{
+        background: transparent;
+        border: 0;
     }}
     QLabel#eyebrow {{
         color: {TEXT_MUTED};
@@ -81,20 +87,48 @@ def build_stylesheet() -> str:
     }}
     QFrame#sidebar {{
         background: {SIDEBAR};
-        border: 0;
-        border-radius: 24px;
+        border: 1px solid {tint(ACCENT, 30)};
+        border-radius: 28px;
+    }}
+    QFrame#sidebarHero {{
+        background: #111827;
+        border: 1px solid {tint(ACCENT, 55)};
+        border-radius: 20px;
+    }}
+    QLabel#sidebarTitle {{
+        color: #f8fafc;
+        font-size: 28px;
+        font-weight: 800;
+    }}
+    QLabel#sidebarIntro {{
+        color: #94a3b8;
+        font-size: 12px;
+    }}
+    QLabel#sidebarSectionLabel {{
+        color: #7c8ea5;
+        font-size: 11px;
+        font-weight: 700;
+        padding-left: 4px;
+    }}
+    QLabel#formLabel {{
+        color: {TEXT_MUTED};
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
     }}
     QPushButton#navButton {{
         background: transparent;
         border: 1px solid transparent;
-        border-radius: 14px;
-        color: #e5edf6;
-        font-weight: 600;
-        padding: 12px 14px;
+        border-radius: 16px;
+        color: #e2e8f0;
+        font-weight: 700;
+        min-height: 44px;
+        padding: 0 14px;
         text-align: left;
     }}
     QPushButton#navButton:hover {{
-        background: {SIDEBAR_ALT};
+        background: #273449;
         border-color: {tint(ACCENT, 80)};
     }}
     QPushButton#navButton[active="true"] {{
@@ -146,13 +180,19 @@ def build_stylesheet() -> str:
         background: {SURFACE};
         border: 1px solid {BORDER};
         border-radius: 12px;
-        padding: 8px 10px;
         selection-background-color: {ACCENT};
         selection-color: white;
+    }}
+    QLineEdit, QComboBox, QPlainTextEdit {{
+        padding: 8px 10px;
+    }}
+    QLineEdit, QComboBox {{
+        min-height: 22px;
     }}
     QTableWidget {{
         gridline-color: {SURFACE_MUTED};
         alternate-background-color: {SURFACE_ALT};
+        padding: 0;
     }}
     QHeaderView::section {{
         background: {SURFACE_ALT};
@@ -166,6 +206,9 @@ def build_stylesheet() -> str:
     }}
     QScrollArea {{
         border: 0;
+        background: transparent;
+    }}
+    QScrollArea#workspaceScroll {{
         background: transparent;
     }}
     QCheckBox {{
@@ -194,5 +237,15 @@ def build_stylesheet() -> str:
         background: {SURFACE_MUTED};
         border-radius: 6px;
         min-height: 30px;
+    }}
+    QScrollBar:horizontal {{
+        background: transparent;
+        height: 12px;
+        margin: 4px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {SURFACE_MUTED};
+        border-radius: 6px;
+        min-width: 30px;
     }}
     """

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ...core.tool_definitions import TOOL_IDS
 from ..dashboard import serialize
-from ..widgets import ActionButton, CardFrame, HeaderBlock
+from ..widgets import ActionButton, CardFrame, HeaderBlock, layout_container
 
 
 class ConfigPage(QWidget):
@@ -32,18 +32,31 @@ class ConfigPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        layout.addWidget(HeaderBlock("05 / Config", "配置矩阵", "修改同步模式、源目录、WSL 和目标路径，保存后由外部控制器提交。"))
-        layout.addWidget(self._build_base_card())
-        layout.addWidget(self._build_environment_card())
-        layout.addLayout(self._build_target_cards())
+        layout.addWidget(
+            HeaderBlock("05 / Config", "配置矩阵", "修改同步模式、源目录、WSL 和目标路径，保存后由外部控制器提交。")
+        )
+        layout.addWidget(self._build_top_cards())
+        layout.addWidget(self._build_target_stack())
         layout.addWidget(self._build_support_card())
         self.dirty_label = QLabel("")
         self.dirty_label.setObjectName("muted")
         layout.addWidget(self.dirty_label)
+        layout.addStretch(1)
+
+    def _build_top_cards(self) -> QWidget:
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(12)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.addWidget(self._build_base_card(), 0, 0)
+        grid.addWidget(self._build_environment_card(), 0, 1)
+        return layout_container(grid)
 
     def _build_base_card(self) -> QWidget:
-        card = CardFrame("同步模式与源目录")
+        card = CardFrame("同步模式与源目录", "先定义全局模式，再指定 Skills 与 Commands 的源目录。")
         form = QFormLayout()
+        form.setSpacing(10)
         self.sync_mode = QComboBox()
         self.sync_mode.addItems(("symlink", "copy"))
         self.skills_source = QLineEdit()
@@ -62,14 +75,16 @@ class ConfigPage(QWidget):
         return card
 
     def _build_environment_card(self) -> QWidget:
-        card = CardFrame("WSL 运行时")
+        card = CardFrame("WSL 运行时", "启用后会把目标路径扩展到当前选中的发行版。")
         form = QFormLayout()
+        form.setSpacing(10)
         self.wsl_enabled = QCheckBox("启用 WSL 同步")
         self.wsl_distro = QComboBox()
         self.wsl_home = QLabel("未解析")
         self.wsl_home.setObjectName("muted")
         self.wsl_error = QLabel("")
         self.wsl_error.setObjectName("muted")
+        self.wsl_error.setWordWrap(True)
         form.addRow("WSL", self.wsl_enabled)
         form.addRow("Distro", self.wsl_distro)
         form.addRow("Home", self.wsl_home)
@@ -78,37 +93,60 @@ class ConfigPage(QWidget):
         self._connect_dirty_signals([self.wsl_enabled, self.wsl_distro])
         return card
 
-    def _build_target_cards(self) -> QGridLayout:
-        layout = QGridLayout()
-        layout.setSpacing(12)
-        cards = [
-            ("windows", "skills", "Windows / Skills"),
-            ("windows", "commands", "Windows / Commands"),
-            ("wsl", "skills", "WSL / Skills"),
-            ("wsl", "commands", "WSL / Commands"),
-        ]
-        for index, (environment_id, kind, title) in enumerate(cards):
-            card = CardFrame(title)
-            form = QFormLayout()
-            for tool_id in TOOL_IDS:
-                editor = QLineEdit()
-                self._targets[(environment_id, kind, tool_id)] = editor
-                editor.textChanged.connect(self._refresh_dirty)
-                form.addRow(tool_id.upper(), editor)
-            card.body_layout.addLayout(form)
-            layout.addWidget(card, index // 2, index % 2)
-        return layout
+    def _build_target_stack(self) -> QWidget:
+        stack = QVBoxLayout()
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(12)
+        stack.addWidget(self._build_target_matrix_card("windows", "Windows 目标矩阵"))
+        stack.addWidget(self._build_target_matrix_card("wsl", "WSL 目标矩阵"))
+        return layout_container(stack)
+
+    def _build_target_matrix_card(self, environment_id: str, title: str) -> QWidget:
+        detail = "同一环境下按 Skills / Commands 并排展示，避免半宽卡片压缩输入框。"
+        card = CardFrame(title, detail)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(10)
+        self._add_target_group(grid, environment_id, "skills", 0)
+        self._add_target_group(grid, environment_id, "commands", 2)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        card.body_layout.addLayout(grid)
+        return card
+
+    def _add_target_group(self, grid: QGridLayout, environment_id: str, kind: str, column: int) -> None:
+        title = QLabel(kind.upper())
+        title.setObjectName("eyebrow")
+        grid.addWidget(title, 0, column, 1, 2)
+        for row, tool_id in enumerate(TOOL_IDS, start=1):
+            label = QLabel(tool_id.upper())
+            label.setObjectName("formLabel")
+            label.setMinimumWidth(92)
+            editor = QLineEdit()
+            self._targets[(environment_id, kind, tool_id)] = editor
+            editor.textChanged.connect(self._refresh_dirty)
+            grid.addWidget(label, row, column)
+            grid.addWidget(editor, row, column + 1)
 
     def _build_support_card(self) -> QWidget:
-        card = CardFrame("Command Folder Support")
+        card = CardFrame("Command Folder Support", "控制命令目录是否保留上层目录结构。")
         self.default_support = QCheckBox("默认保留目录")
         self.default_support.stateChanged.connect(self._refresh_dirty)
-        card.body_layout.addWidget(self.default_support)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(10)
+        grid.addWidget(self.default_support, 0, 0, 1, 2)
         for tool_id in TOOL_IDS:
             checkbox = QCheckBox(f"{tool_id} 保留目录")
             checkbox.stateChanged.connect(self._refresh_dirty)
-            card.body_layout.addWidget(checkbox)
             self._tool_support[tool_id] = checkbox
+        for index, (tool_id, checkbox) in enumerate(self._tool_support.items(), start=1):
+            row = ((index - 1) // 2) + 1
+            column = (index - 1) % 2
+            grid.addWidget(checkbox, row, column)
+        card.body_layout.addLayout(grid)
         return card
 
     def _connect_dirty_signals(self, widgets: list[QWidget]) -> None:
@@ -163,10 +201,7 @@ class ConfigPage(QWidget):
             },
             "commandSubfolderSupport": {
                 "default": self.default_support.isChecked(),
-                "tools": {
-                    tool_id: checkbox.isChecked()
-                    for tool_id, checkbox in self._tool_support.items()
-                },
+                "tools": {tool_id: checkbox.isChecked() for tool_id, checkbox in self._tool_support.items()},
             },
         }
 

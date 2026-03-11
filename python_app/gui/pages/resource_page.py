@@ -5,7 +5,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QTableWidget,
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ...core.tool_definitions import TOOL_IDS
 from ..dashboard import entry_summary, serialize
-from ..widgets import ActionButton, CardFrame, HeaderBlock
+from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table
 
 TABLE_HEADERS = ("选中", "名称", "类型", "摘要", "路径", "状态", "Claude", "Codex", "Gemini", "Antigravity")
 
@@ -40,24 +39,23 @@ class ResourcePage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
         title = "Skills" if self.kind == "skills" else "Commands"
-        layout.addWidget(HeaderBlock(f"0{'2' if self.kind == 'skills' else '3'} / {title}", title, "资源分配草稿只留在界面层，保存后才写回配置。"))
-        layout.addLayout(self._build_toolbar())
-        self.meta = QLabel("0 条记录")
-        self.meta.setObjectName("muted")
-        layout.addWidget(self.meta)
-        self.table = QTableWidget(0, len(TABLE_HEADERS))
-        self.table.setAlternatingRowColors(True)
-        self.table.setHorizontalHeaderLabels(TABLE_HEADERS)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        layout.addWidget(self.table)
+        layout.addWidget(
+            HeaderBlock(
+                f"0{'2' if self.kind == 'skills' else '3'} / {title}",
+                title,
+                "资源分配草稿只留在界面层，保存后才写回配置。",
+            )
+        )
+        layout.addWidget(self._build_toolbar_card())
+        layout.addWidget(self._build_table_card(title), 1)
 
-    def _build_toolbar(self) -> QGridLayout:
-        layout = QGridLayout()
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(10)
+    def _build_toolbar_card(self) -> QWidget:
+        card = CardFrame("筛选与动作", "搜索后可保存分配，也可以只同步当前勾选项。")
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(0, 1)
         self.search = QLineEdit()
         self.search.setPlaceholderText(f"搜索 {self.kind} 名称或路径")
         self.search.textChanged.connect(self._rebuild_table)
@@ -67,21 +65,35 @@ class ResourcePage(QWidget):
         self.rescan_button.clicked.connect(lambda: self.rescan_requested.emit(self.kind))
         self.save_button.clicked.connect(self._emit_save)
         self.sync_button.clicked.connect(self._emit_sync)
-        layout.addWidget(self.search, 0, 0)
-        layout.addWidget(self.rescan_button, 0, 1)
-        layout.addWidget(self.save_button, 0, 2)
-        layout.addWidget(self.sync_button, 0, 3)
-        return layout
+        grid.addWidget(self.search, 0, 0, 1, 2)
+        grid.addWidget(self.rescan_button, 0, 2)
+        grid.addWidget(self.save_button, 0, 3)
+        grid.addWidget(self.sync_button, 0, 4)
+        self.meta = QLabel("0 条记录")
+        self.meta.setObjectName("muted")
+        grid.addWidget(self.meta, 1, 0, 1, 5)
+        card.body_layout.addLayout(grid)
+        return card
+
+    def _build_table_card(self, title: str) -> QWidget:
+        card = CardFrame(f"{title} 清单", "按状态、路径和工具分配检查当前资源。")
+        self.table = QTableWidget(0, len(TABLE_HEADERS))
+        self.table.setHorizontalHeaderLabels(TABLE_HEADERS)
+        configure_table(self.table, stretch_columns=(3, 4, 5))
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setColumnWidth(0, 56)
+        self.table.setColumnWidth(1, 180)
+        self.table.setColumnWidth(2, 72)
+        for column in range(6, len(TABLE_HEADERS)):
+            self.table.setColumnWidth(column, 72)
+        card.body_layout.addWidget(self.table)
+        return card
 
     def _filtered_rows(self) -> list[dict[str, object]]:
         query = self.search.text().strip().lower()
         if not query:
             return self.rows
-        return [
-            row
-            for row in self.rows
-            if query in row["name"].lower() or query in row["path"].lower()
-        ]
+        return [row for row in self.rows if query in row["name"].lower() or query in row["path"].lower()]
 
     def _emit_save(self) -> None:
         self.save_requested.emit(self.kind, self.get_assignments())
@@ -121,13 +133,7 @@ class ResourcePage(QWidget):
         type_label = "目录" if row["isDirectory"] else "文件"
         path_text = row["path"] or "源路径不可用"
         status_text = entry_summary(row["entries"])
-        values = [
-            row["name"],
-            type_label,
-            row["summaryMessage"],
-            path_text,
-            status_text,
-        ]
+        values = [row["name"], type_label, row["summaryMessage"], path_text, status_text]
         for column, value in enumerate(values, start=1):
             item = QTableWidgetItem(value)
             item.setFlags(Qt.ItemFlag.ItemIsEnabled)

@@ -1,8 +1,8 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from ..dashboard import summarize_cleanup
-from ..widgets import ActionButton, CardFrame, HeaderBlock
+from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table
 
 
 class CleanupPage(QWidget):
@@ -10,24 +10,39 @@ class CleanupPage(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
         layout.addWidget(HeaderBlock("06 / Cleanup", "清理工单", "清理冲突目标、缺失目标和源失效配置项。"))
-        self.summary_card = CardFrame("清理摘要")
+        layout.addWidget(self._build_summary_card())
+        layout.addWidget(self._build_result_card(), 1)
+
+    def _build_summary_card(self) -> QWidget:
+        self.summary_card = CardFrame("清理摘要", "候选数、执行入口和最近一次结果在这里集中展示。")
+        self.summary_text = QLabel("等待清理扫描结果。")
+        self.summary_text.setObjectName("muted")
+        self.summary_text.setWordWrap(True)
         self.run_button = ActionButton("执行清理", "danger")
         self.run_button.clicked.connect(self.cleanup_requested.emit)
-        self.summary_label = QTableWidget(0, 4)
-        self.summary_label.setHorizontalHeaderLabels(("资源", "工具", "环境", "目标"))
-        self.summary_label.verticalHeader().setVisible(False)
+        self.summary_card.body_layout.addWidget(self.summary_text)
         self.summary_card.body_layout.addWidget(self.run_button)
-        self.summary_card.body_layout.addWidget(self.summary_label)
-        layout.addWidget(self.summary_card)
+        return self.summary_card
+
+    def _build_result_card(self) -> QWidget:
+        self.result_card = CardFrame("处理明细", "展示最近一次清理批次实际触达的目标路径。")
+        self.summary_table = QTableWidget(0, 4)
+        self.summary_table.setHorizontalHeaderLabels(("资源", "工具", "环境", "目标"))
+        configure_table(self.summary_table, stretch_columns=(0, 3))
+        self.result_card.body_layout.addWidget(self.summary_table)
+        return self.result_card
 
     def set_context(self, candidate_count: int, result: dict[str, object] | None) -> None:
         cleaned = result["cleaned"] if result else []
-        self.summary_card._detail.setText(f"候选项 {candidate_count} 条 · {summarize_cleanup(cleaned)}")
-        self.summary_label.setRowCount(len(cleaned))
+        self.summary_text.setText(f"候选项 {candidate_count} 条 · {summarize_cleanup(cleaned)}")
+        self.summary_table.setRowCount(len(cleaned))
         for row_index, item in enumerate(cleaned):
             values = [
                 f"{item['kind']} / {item['name']}",
@@ -36,7 +51,7 @@ class CleanupPage(QWidget):
                 item.get("targetPath") or "",
             ]
             for column, value in enumerate(values):
-                self.summary_label.setItem(row_index, column, QTableWidgetItem(str(value)))
+                self.summary_table.setItem(row_index, column, QTableWidgetItem(str(value)))
 
     def set_busy(self, busy: bool) -> None:
         self.run_button.set_busy(busy)
