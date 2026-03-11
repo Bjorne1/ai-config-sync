@@ -1,176 +1,152 @@
-# Skill Manager
+# AI Config Sync
 
-统一管理多个 AI 工具的 Skills，通过软链接将 Skill 文件同步到 Claude、Codex、Gemini 等工具的技能目录。
+Windows 桌面端，用一次操作把 Skills / Commands 同步到 Windows 本机，并可选同时同步到该 Windows 上安装的 WSL2 发行版。
 
-## 功能特性
+## 当前能力
 
-- 将 Skill 统一存放在一个源目录
-- 通过软链接同步到多个 AI 工具
-- 支持批量添加、禁用、移除 Skill
-- 自动验证和修复损坏的链接
-
-## 支持的工具
-
-| 工具 | 目标目录 |
-|------|----------|
-| Claude | `~/.claude/skills` |
-| Codex | `~/.codex/skills` |
-| Gemini | `~/.gemini/skills` |
-| Antigravity | `~/.gemini/antigravity/skills` |
+- 只支持在 Windows 上运行
+- Electron GUI 管理：
+  - 概览
+  - Skills
+  - Commands
+  - 状态
+  - 配置
+  - 清理
+  - 工具更新
+- 同步目标支持：
+  - Windows
+  - 可选 WSL2 单发行版
+- 同步方式支持：
+  - 软链接 `symlink`
+  - 文件复制 `copy`
+- `copy` 模式下，同名目标在同步时会直接覆盖
 
 ## 安装
 
 ```bash
-# 克隆项目
-git clone <repo-url>
-cd skill-manage
-
-# 安装依赖
 npm install
 ```
 
-## 使用前提
+## 启动
 
 ### Windows
 
-需要管理员权限或开发者模式才能创建软链接：
-
-- 方式一：以管理员身份运行命令行
-- 方式二：启用开发者模式
-  - 设置 → 更新和安全 → 开发者选项 → 开发人员模式
-
-### Linux / WSL
-
-普通用户即可创建软链接，无需特殊权限。如遇权限问题：
-
-- 检查目标目录的写入权限
-- 或使用 `sudo` 运行程序
-
-## 使用方式
-
-### 启动程序
-
-```bash
-# Windows
-start.bat
-
-# Linux / WSL
-./start.sh
-```
-
-### 交互式菜单
-
 ```bash
 npm start
-# 或
-node index.js
 ```
 
-### 命令行快捷方式
+或直接运行：
 
 ```bash
-# 查看状态
-npm run status
-node index.js status
-
-# 同步所有 Skill
-npm run sync
-node index.js sync
-
-# 验证链接
-npm run validate
-node index.js validate
+start.bat
 ```
 
-## 菜单功能说明
+### 非 Windows
 
-### 1. 添加/启用 Skill
+不支持。`start.sh` 和 `node index.js` 都会直接退出并提示错误。
 
-从源目录扫描可用的 Skill 文件，选择要启用的 Skill 和目标工具。
+## GUI 说明
 
-### 2. 禁用 Skill
+### 概览
 
-从指定工具中移除 Skill 链接，保留源文件。
+- 查看当前同步模式
+- 查看 WSL 开关与当前发行版
+- 一键刷新
+- 一键同步全部资源
 
-### 3. 移除 Skill
+### Skills / Commands
 
-从所有已启用的工具中移除 Skill 链接。
+- 扫描源目录
+- 按工具分配资源
+- 保存分配关系
+- 同步当前类型的全部或选中项
 
-### 4. 查看当前状态
+### 状态
 
-显示所有已启用 Skill 的状态表格：
-- ✓ 链接有效
-- ✗ 链接损坏或无效
-- - 未启用到该工具
+- 查看 Windows / WSL 环境状态
+- 查看异常条目
+- 查看最近动作日志
 
-### 5. 修改源目录
+### 配置
 
-更改 Skill 文件的存放位置。
+- 修改 Skills / Commands 源目录
+- 切换全局同步方式
+- 开关 WSL 同步
+- 选择 WSL 发行版
+- 编辑 Windows / WSL 的目标目录
+- 配置 Command 子目录支持规则
 
-### 6. 同步所有 Skill
+### 清理
 
-检查并修复所有损坏的链接，确保配置与实际状态一致。
+- 清理冲突目标
+- 清理缺失目标
+- 清理源已失效的配置项
 
-## 目录结构
+### 工具更新
 
-```
-skill-manage/
-├── index.js          # 主程序
-├── config.json       # 配置文件（自动生成）
-├── skills/           # 默认源目录（自动生成）
-│   ├── my-skill.md   # Skill 文件示例
-│   └── my-skill-dir/ # Skill 目录示例
-├── lib/
-│   ├── config.js     # 配置管理
-│   ├── scanner.js    # 目录扫描
-│   └── linker.js     # 软链接操作
-├── start.bat         # Windows 启动脚本
-├── start.sh          # Linux/WSL 启动脚本
-└── package.json
-```
+- 按 `config.json` 中的 `updateTools` 批量执行更新
 
-## 配置文件
+## 配置结构
 
-`config.json` 结构：
+`config.json` 当前使用新结构：
 
 ```json
 {
-  "sourceDir": "D:\\wcs_project\\skill-manage\\skills",
-  "targets": {},
-  "skills": {
-    "my-skill.md": ["claude", "codex"],
-    "another-skill": ["claude"]
+  "version": 2,
+  "syncMode": "symlink",
+  "sourceDirs": {
+    "skills": "/abs/path/to/skills",
+    "commands": "/abs/path/to/commands"
+  },
+  "environments": {
+    "windows": {
+      "enabled": true,
+      "targets": {
+        "skills": {
+          "claude": "%USERPROFILE%\\.claude\\skills"
+        },
+        "commands": {
+          "claude": "%USERPROFILE%\\.claude\\commands"
+        }
+      }
+    },
+    "wsl": {
+      "enabled": false,
+      "selectedDistro": null,
+      "targets": {
+        "skills": {
+          "claude": "$HOME/.claude/skills"
+        },
+        "commands": {
+          "claude": "$HOME/.claude/commands"
+        }
+      }
+    }
+  },
+  "resources": {
+    "skills": {},
+    "commands": {}
   }
 }
 ```
 
-- `sourceDir`: Skill 源文件目录
-- `targets`: 自定义工具目录（覆盖默认值）
-- `skills`: 已启用的 Skill 及其目标工具
+说明：
 
-## 常见问题
+- `syncMode` 为全局配置，同时作用于 Windows 与 WSL
+- `resources.skills` / `resources.commands` 记录每个资源分配到哪些工具
+- Windows 默认目标使用 `%USERPROFILE%` 占位符
+- WSL 默认目标使用 `$HOME` 占位符
 
-### 创建软链接失败
+## WSL 同步说明
 
-- **Windows**: 确保以管理员身份运行或已启用开发者模式
-- **Linux/WSL**: 检查目标目录权限或使用 sudo
+- 仅在 Windows 宿主上工作
+- 通过 `wsl.exe` 发现发行版并读取 `$HOME`
+- 实际文件写入使用 `\\\\wsl.localhost\\<distro>\\...` UNC 路径
+- 若 WSL 未安装、发行版不存在或路径不可写，GUI 会明确显示错误，不做静默降级
 
-### 链接显示无效
+## 构建校验
 
-运行 `npm run sync` 修复损坏的链接。
-
-### 添加新的目标工具
-
-在 `config.json` 的 `targets` 中添加：
-
-```json
-{
-  "targets": {
-    "my-tool": "C:\\path\\to\\my-tool\\skills"
-  }
-}
+```bash
+npm run typecheck
+npm run build
 ```
-
-## License
-
-MIT

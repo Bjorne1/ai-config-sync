@@ -1,25 +1,66 @@
 {
-  "sourceDir": "/home/wcs/projects/ai-config-sync/skills",
-  "targets": {},
-  "skills": {},
-  "commandsSourceDir": "/home/wcs/projects/ai-config-sync/commands",
-  "commandTargets": {},
-  "commands": {
-    "brainstorming.md": [
-      "claude",
-      "codex",
-      "gemini"
-    ],
-    "commit": [
-      "claude",
-      "codex",
-      "gemini"
-    ],
-    "gudaspec": [
-      "claude",
-      "codex",
-      "gemini"
-    ]
+  "version": 2,
+  "syncMode": "symlink",
+  "sourceDirs": {
+    "skills": "/home/wcs/projects/ai-config-sync/skills",
+    "commands": "/home/wcs/projects/ai-config-sync/commands"
+  },
+  "environments": {
+    "windows": {
+      "enabled": true,
+      "targets": {
+        "skills": {
+          "claude": "%USERPROFILE%\\.claude\\skills",
+          "codex": "%USERPROFILE%\\.codex\\skills",
+          "gemini": "%USERPROFILE%\\.gemini\\skills",
+          "antigravity": "%USERPROFILE%\\.gemini\\antigravity\\skills"
+        },
+        "commands": {
+          "claude": "%USERPROFILE%\\.claude\\commands",
+          "codex": "%USERPROFILE%\\.codex\\prompts",
+          "gemini": "%USERPROFILE%\\.gemini\\commands",
+          "antigravity": "%USERPROFILE%\\.gemini\\antigravity\\global_workflows"
+        }
+      }
+    },
+    "wsl": {
+      "enabled": false,
+      "selectedDistro": null,
+      "targets": {
+        "skills": {
+          "claude": "$HOME/.claude/skills",
+          "codex": "$HOME/.codex/skills",
+          "gemini": "$HOME/.gemini/skills",
+          "antigravity": "$HOME/.gemini/antigravity/skills"
+        },
+        "commands": {
+          "claude": "$HOME/.claude/commands",
+          "codex": "$HOME/.codex/prompts",
+          "gemini": "$HOME/.gemini/commands",
+          "antigravity": "$HOME/.gemini/antigravity/global_workflows"
+        }
+      }
+    }
+  },
+  "resources": {
+    "skills": {},
+    "commands": {
+      "brainstorming.md": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "commit": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "gudaspec": [
+        "claude",
+        "codex",
+        "gemini"
+      ]
+    }
   },
   "commandSubfolderSupport": {
     "default": false,
@@ -40,11 +81,5 @@
       "type": "npm",
       "package": "@fission-ai/openspec"
     }
-  },
-  "git": {
-    "projectDirs": [
-      "~/projects"
-    ],
-    "exclude": []
   }
 }
