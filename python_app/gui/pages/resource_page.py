@@ -1,5 +1,5 @@
 from copy import deepcopy
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -15,20 +15,21 @@ from PySide6.QtWidgets import (
 from ...core.tool_definitions import TOOL_IDS
 from ..dashboard import serialize
 from ..event_filters import WheelBlocker
+from ..logo_matrix import (
+    LOGO_ACTIVE_ROLE,
+    LOGO_STATE_ROLE,
+    LOGO_TOOL_ROLE,
+    MATRIX_COLUMNS,
+    MATRIX_GROUPS,
+    TABLE_HEADERS,
+    ToolLogoDelegate,
+    find_matrix_entry,
+    is_logo_matrix_cell,
+    matrix_column,
+    matrix_tooltip,
+)
 from ..pagination import Pager, paginate
 from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure_table
-MATRIX_COLUMNS = (
-    ("windows", "claude", "CLAUDE", "Windows / Claude"),
-    ("windows", "codex", "CODEX", "Windows / Codex"),
-    ("windows", "gemini", "GEMINI", "Windows / Gemini"),
-    ("windows", "antigravity", "AG", "Windows / Antigravity"),
-    ("wsl", "claude", "CLAUDE", "WSL / Claude"),
-    ("wsl", "codex", "CODEX", "WSL / Codex"),
-    ("wsl", "gemini", "GEMINI", "WSL / Gemini"),
-    ("wsl", "antigravity", "AG", "WSL / Antigravity"),
-)
-TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS))
-MATRIX_GROUPS = (("WIN", (3, 4, 5, 6)), ("WSL", (7, 8, 9, 10)))
 RESOURCE_ROWS_PER_PAGE = 12
 class ResourcePage(QWidget):
     rescan_requested = Signal(str)
@@ -92,10 +93,7 @@ class ResourcePage(QWidget):
         self.table.viewport().installEventFilter(self._table_wheel_blocker)
         frozen_view.viewport().installEventFilter(self._table_wheel_blocker)
         header = self.table.horizontalHeader()
-        fixed_columns = {
-            0: 56,
-            2: 80,
-        }
+        fixed_columns = {0: 56, 2: 80}
         for column, width in fixed_columns.items():
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(column, width)
@@ -113,7 +111,12 @@ class ResourcePage(QWidget):
             item = self.table.horizontalHeaderItem(column)
             if item:
                 item.setToolTip(label if column < 3 else MATRIX_COLUMNS[column - 3][3])
-        self.table.itemChanged.connect(self._handle_item_changed)
+        self._logo_delegate = ToolLogoDelegate(self.table)
+        for column in range(3, len(TABLE_HEADERS)):
+            self.table.setItemDelegateForColumn(column, self._logo_delegate)
+        frozen_view.setItemDelegate(self._logo_delegate)
+        self.table.clicked.connect(self._handle_matrix_clicked)
+        frozen_view.clicked.connect(self._handle_matrix_clicked)
         self.table.sync_frozen_view()
         self.pager = Pager()
         self.pager.page_requested.connect(self._set_page)
@@ -155,11 +158,7 @@ class ResourcePage(QWidget):
         self._rebuild_table()
 
     def get_assignments(self) -> dict[str, dict[str, list[str]]]:
-        return {
-            name: targets
-            for name, targets in self.assignments.items()
-            if self._has_assignments(targets)
-        }
+        return {name: targets for name, targets in self.assignments.items() if self._has_assignments(targets)}
 
     def get_selected_names(self) -> list[str]:
         visible = {row["name"] for row in self._filtered_rows()}
@@ -207,14 +206,9 @@ class ResourcePage(QWidget):
             self.table.setItem(row_index, column, item)
         for offset, (environment_id, tool_id, _label, _tooltip) in enumerate(MATRIX_COLUMNS):
             item = QTableWidgetItem()
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                Qt.CheckState.Checked
-                if tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
-                else Qt.CheckState.Unchecked
-            )
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setToolTip(f"{'Windows' if environment_id == 'windows' else 'WSL'} / {tool_id}")
+            self._apply_matrix_item_state(item, row, environment_id, tool_id)
             self.table.setItem(row_index, offset + 3, item)
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
@@ -254,19 +248,51 @@ class ResourcePage(QWidget):
             self.assignments.pop(name, None)
         self._update_meta()
 
-    def _handle_item_changed(self, item: QTableWidgetItem) -> None:
-        if self._updating_table or item.column() < 3:
+    def _handle_matrix_clicked(self, index: QModelIndex) -> None:
+        if self._updating_table or not is_logo_matrix_cell(index):
             return
-        row = item.row()
+        row = index.row()
         if row >= len(self._visible_rows):
             return
         resource = self._visible_rows[row]
-        environment_id, tool_id, _label, _tooltip = MATRIX_COLUMNS[item.column() - 3]
+        environment_id, tool_id, _label, _tooltip = MATRIX_COLUMNS[index.column() - 3]
         name = resource["name"]
-        state = item.checkState().value
+        active = tool_id in self.assignments.get(name, {}).get(environment_id, [])
+        state = Qt.CheckState.Unchecked.value if active else Qt.CheckState.Checked.value
         self._toggle_tool(name, environment_id, tool_id, state)
+        self._refresh_matrix_cell(row, resource, environment_id, tool_id)
         payload = {"action": "sync" if state == Qt.CheckState.Checked.value else "remove", "names": [name], "assignments": {name: {environment_id: [tool_id]}}, "commitTargets": deepcopy(self.assignments.get(name, {}))}
         self.sync_requested.emit(self.kind, payload)
 
     def _has_assignments(self, targets: dict[str, list[str]]) -> bool:
         return any(targets.get(environment_id) for environment_id in ("windows", "wsl"))
+
+    def _apply_matrix_item_state(
+        self,
+        item: QTableWidgetItem,
+        row: dict[str, object],
+        environment_id: str,
+        tool_id: str,
+    ) -> None:
+        active = tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
+        entry = find_matrix_entry(row, environment_id, tool_id)
+        state = entry["state"] if active and entry else ("healthy" if active else "idle")
+        item.setData(LOGO_ACTIVE_ROLE, active)
+        item.setData(LOGO_STATE_ROLE, state)
+        item.setData(LOGO_TOOL_ROLE, tool_id)
+        item.setToolTip(matrix_tooltip(environment_id, tool_id, active, entry if active else None))
+
+    def _refresh_matrix_cell(
+        self,
+        row_index: int,
+        row: dict[str, object],
+        environment_id: str,
+        tool_id: str,
+    ) -> None:
+        column = matrix_column(environment_id, tool_id)
+        item = self.table.item(row_index, column)
+        if item is None:
+            return
+        self._apply_matrix_item_state(item, row, environment_id, tool_id)
+        index = self.table.model().index(row_index, column)
+        self.table.model().dataChanged.emit(index, index)
