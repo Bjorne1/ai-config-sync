@@ -162,7 +162,7 @@ class MainWindow(QMainWindow):
         self._update_workspace_scroll_policy(key)
 
     def _update_workspace_scroll_policy(self, key: str) -> None:
-        scrollable_pages = {"status", "config", "tools"}
+        scrollable_pages = {"status", "config"}
         enabled = key in scrollable_pages
         policy = Qt.ScrollBarPolicy.ScrollBarAsNeeded if enabled else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         self.workspace_scroll.setVerticalScrollBarPolicy(policy)

@@ -4,11 +4,11 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -16,12 +16,20 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.tool_definitions import UPDATE_TOOL_TYPES
-from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table, layout_container
+from ..widgets import ActionButton, CardFrame, configure_table
 
 
 class ToolsPage(QWidget):
     update_requested = Signal()
     definitions_save_requested = Signal(object)
+
+    _PAGE_SPACING = 12
+    _CARD_SPACING = 16
+    _DEFINITION_PANEL_SPACING = 16
+    _TABLE_HEIGHT_BUFFER = 8
+    _MAX_VISIBLE_RESULT_ROWS = 6
+    _MIN_VISIBLE_DEFINITION_ROWS = 6
+    _MAX_VISIBLE_DEFINITION_ROWS = 8
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -32,20 +40,11 @@ class ToolsPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
-        layout.addWidget(HeaderBlock("07 / Tools", "工具更新", "配置中的更新定义支持直接新增、编辑、删除。"))
-        layout.addWidget(self._build_top_row())
-        layout.addWidget(self._build_result_card(), 1)
-
-    def _build_top_row(self) -> QWidget:
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(12)
-        grid.setColumnStretch(0, 4)
-        grid.setColumnStretch(1, 9)
-        grid.addWidget(self._build_action_card(), 0, 0)
-        grid.addWidget(self._build_definition_card(), 0, 1)
-        return layout_container(grid)
+        layout.setSpacing(self._PAGE_SPACING)
+        layout.addWidget(self._build_action_card())
+        layout.addWidget(self._build_definition_card())
+        layout.addWidget(self._build_result_card())
+        layout.addStretch(1)
 
     def _build_action_card(self) -> QWidget:
         self.action_card = CardFrame("更新入口", "先确认定义，再执行一键更新。")
@@ -54,19 +53,42 @@ class ToolsPage(QWidget):
         self.definition_meta.setWordWrap(True)
         self.run_button = ActionButton("一键更新工具", "primary")
         self.run_button.clicked.connect(self.update_requested.emit)
-        self.action_card.body_layout.addWidget(self.definition_meta)
-        self.action_card.body_layout.addWidget(self.run_button)
+        self.action_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(self._CARD_SPACING)
+        row.addWidget(self.definition_meta, 1)
+        row.addWidget(self.run_button, 0)
+        self.action_card.body_layout.addLayout(row)
         return self.action_card
 
     def _build_definition_card(self) -> QWidget:
         self.definition_card = CardFrame("更新定义", "支持 npm、npx 和自定义命令，选中表格即可编辑。")
-        self.definition_table = QTableWidget(0, 3)
-        self.definition_table.setHorizontalHeaderLabels(("名称", "类型", "包名 / 命令"))
-        self.definition_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.definition_table.itemSelectionChanged.connect(self._load_selected_definition)
-        configure_table(self.definition_table, stretch_columns=(2,))
-        self.definition_table.setMaximumHeight(240)
-        self.definition_card.body_layout.addWidget(self.definition_table)
+        self.definition_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.definition_table = self._build_definition_table()
+        editor = self._build_definition_editor()
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(self._DEFINITION_PANEL_SPACING)
+        body.addWidget(self.definition_table, 7)
+        body.addWidget(editor, 5)
+        self.definition_card.body_layout.addLayout(body)
+        self._refresh_editor_hint(self.type_input.currentText())
+        return self.definition_card
+
+    def _build_definition_table(self) -> QTableWidget:
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(("名称", "类型", "包名 / 命令"))
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        table.itemSelectionChanged.connect(self._load_selected_definition)
+        configure_table(table, stretch_columns=(2,))
+        return table
+
+    def _build_definition_editor(self) -> QWidget:
+        editor = QWidget()
+        layout = QVBoxLayout(editor)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
         form = QFormLayout()
         form.setSpacing(10)
@@ -78,17 +100,17 @@ class ToolsPage(QWidget):
         form.addRow("名称", self.name_input)
         form.addRow("类型", self.type_input)
         form.addRow("包名 / 命令", self.value_input)
-        self.definition_card.body_layout.addLayout(form)
+        layout.addLayout(form)
 
         self.editor_hint = QLabel("")
         self.editor_hint.setObjectName("muted")
         self.editor_hint.setWordWrap(True)
-        self.definition_card.body_layout.addWidget(self.editor_hint)
+        layout.addWidget(self.editor_hint)
 
         self.editor_status = QLabel("新增模式：填写定义后点击“保存定义”。")
         self.editor_status.setObjectName("muted")
         self.editor_status.setWordWrap(True)
-        self.definition_card.body_layout.addWidget(self.editor_status)
+        layout.addWidget(self.editor_status)
 
         button_row = QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
@@ -103,9 +125,9 @@ class ToolsPage(QWidget):
         self.reset_button.clicked.connect(self._clear_editor)
         for button in (self.new_button, self.save_button, self.delete_button, self.reset_button):
             button_row.addWidget(button)
-        self.definition_card.body_layout.addLayout(button_row)
-        self._refresh_editor_hint(self.type_input.currentText())
-        return self.definition_card
+        layout.addLayout(button_row)
+        layout.addStretch(1)
+        return editor
 
     def _build_result_card(self) -> QWidget:
         self.result_card = CardFrame("最近更新结果", "对比更新前后版本并标记执行结果。")
@@ -113,6 +135,8 @@ class ToolsPage(QWidget):
         self.result_table.setHorizontalHeaderLabels(("名称", "类型", "版本", "结果"))
         configure_table(self.result_table, stretch_columns=(2,))
         self.result_card.body_layout.addWidget(self.result_table)
+        self.result_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._sync_result_table_height()
         return self.result_card
 
     def set_context(self, definitions: dict[str, dict[str, str]], results: list[dict[str, object]]) -> None:
@@ -125,6 +149,7 @@ class ToolsPage(QWidget):
                 item = QTableWidgetItem(str(value))
                 item.setToolTip(str(value))
                 self.definition_table.setItem(row_index, column, item)
+        self._sync_definition_table_height()
         if self._editing_name and self._editing_name in self._definitions:
             self._select_definition(self._editing_name)
         elif entries and not self.definition_table.selectedItems():
@@ -140,6 +165,7 @@ class ToolsPage(QWidget):
                 item = QTableWidgetItem(str(value))
                 item.setToolTip(str(value))
                 self.result_table.setItem(row_index, column, item)
+        self._sync_result_table_height()
 
     def set_busy(self, update_busy: bool, save_busy: bool) -> None:
         self.run_button.set_busy(update_busy)
@@ -157,6 +183,24 @@ class ToolsPage(QWidget):
 
     def _definition_value(self, definition: dict[str, str]) -> str:
         return definition.get("package") or definition.get("command") or ""
+
+    def _sync_definition_table_height(self) -> None:
+        row_count = self.definition_table.rowCount()
+        visible_rows = min(
+            max(row_count, self._MIN_VISIBLE_DEFINITION_ROWS),
+            self._MAX_VISIBLE_DEFINITION_ROWS,
+        )
+        self.definition_table.setFixedHeight(self._table_height(self.definition_table, visible_rows))
+
+    def _sync_result_table_height(self) -> None:
+        visible_rows = min(self.result_table.rowCount(), self._MAX_VISIBLE_RESULT_ROWS)
+        self.result_table.setFixedHeight(self._table_height(self.result_table, visible_rows))
+
+    def _table_height(self, table: QTableWidget, rows: int) -> int:
+        header_height = table.horizontalHeader().sizeHint().height()
+        row_height = table.verticalHeader().defaultSectionSize()
+        frame_height = table.frameWidth() * 2
+        return frame_height + header_height + (rows * row_height) + self._TABLE_HEIGHT_BUFFER
 
     def _refresh_editor_hint(self, tool_type: str) -> None:
         hints = {
