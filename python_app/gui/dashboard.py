@@ -100,6 +100,8 @@ def build_resource_rows(
                 "isDirectory": (scanned or status or {}).get("isDirectory", False),
                 "childrenCount": _children_count(scanned),
                 "scanned": bool(scanned),
+                "description": (scanned or {}).get("description", "") if scanned else "",
+                "descriptionSource": (scanned or {}).get("descriptionSource", "") if scanned else "",
                 "configuredTargets": configured_targets,
                 "detectedTargets": detected_targets,
                 "effectiveTargets": effective_targets,

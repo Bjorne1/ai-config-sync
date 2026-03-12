@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QLabel, QTableWidget, QTableWidgetItem, QVBoxLayou
 from ..dashboard import summarize_cleanup
 from ..event_filters import WheelBlocker
 from ..pagination import Pager, paginate
-from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table
+from ..widgets import ActionButton, CardFrame, configure_table
 
 CLEANUP_ROWS_PER_PAGE = 10
 
@@ -24,7 +24,6 @@ class CleanupPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        layout.addWidget(HeaderBlock("06 / Cleanup", "清理工单", "清理冲突目标、缺失目标和源失效配置项。"))
         layout.addWidget(self._build_summary_card())
         layout.addWidget(self._build_result_card(), 1)
 

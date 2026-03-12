@@ -39,7 +39,7 @@ class AppController(QObject):
             busy_key,
             "刷新总览",
             self._fetch_snapshot,
-            lambda snapshot: self.window.set_snapshot(snapshot),
+            self._after_snapshot,
             log_success=busy_key != "initial",
             reset_error=reset_error,
         )
@@ -60,17 +60,41 @@ class AppController(QObject):
         config = self.service.get_config()
         status = self.service.get_status()
         wsl_runtime = self.service.get_wsl_distros()
-        tool_statuses = self.service.get_update_tool_statuses(config, wsl_runtime)
         return {
             "config": config,
             "status": {**status, "config": config},
             "wslRuntime": wsl_runtime,
-            "updateToolStatuses": tool_statuses,
             "inventory": {
                 "skills": self.service.scan_resources("skills"),
                 "commands": self.service.scan_resources("commands"),
             },
         }
+
+    def _after_snapshot(self, snapshot: dict[str, object]) -> None:
+        self.window.set_snapshot(snapshot)
+        self._refresh_update_tool_statuses(snapshot)
+
+    def _refresh_update_tool_statuses(self, snapshot: dict[str, object]) -> None:
+        if self.busy.get("loadUpdateToolStatuses"):
+            return
+        config = snapshot.get("config")
+        if not isinstance(config, dict):
+            return
+        tools = config.get("updateTools", {})
+        if not isinstance(tools, dict) or not tools:
+            return
+        wsl_runtime = snapshot.get("wslRuntime", {})
+        if not isinstance(wsl_runtime, dict):
+            wsl_runtime = {}
+
+        self._run_task(
+            "loadUpdateToolStatuses",
+            "读取工具版本",
+            lambda: self.service.get_update_tool_statuses(config, wsl_runtime),
+            lambda statuses: self.window.set_update_tool_statuses(statuses),
+            log_success=False,
+            reset_error=False,
+        )
 
     def _sync_all(self) -> None:
         self._run_task("syncAll", "全量同步", self.service.sync_all, self._after_sync_all)

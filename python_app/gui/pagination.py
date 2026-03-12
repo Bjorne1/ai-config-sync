@@ -35,9 +35,9 @@ class Pager(QWidget):
         self.label.setObjectName("muted")
         self.prev_button.clicked.connect(self._request_prev)
         self.next_button.clicked.connect(self._request_next)
+        layout.addStretch(1)
         layout.addWidget(self.prev_button)
         layout.addWidget(self.next_button)
-        layout.addStretch(1)
         layout.addWidget(self.label)
         self.set_state(0, 0, 0)
 

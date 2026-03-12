@@ -33,7 +33,45 @@ from ..logo_matrix import (
 from ..pagination import Pager, paginate
 from .resource_selection import PageSelection
 from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure_table
-RESOURCE_ROWS_PER_PAGE = 12
+RESOURCE_ROWS_PER_PAGE = 10
+NAME_CELL_PREVIEW_CHARS = 90
+ROW_HEIGHT_DEFAULT = 42
+ROW_HEIGHT_WITH_DESCRIPTION = 58
+
+
+def _truncate(text: str, limit: int) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[:limit]}…"
+
+
+def _build_name_tooltip(description: str, path: str) -> str:
+    parts = [part for part in (description.strip(), path.strip()) if part]
+    return "\n\n".join(parts)
+
+
+def _build_name_cell(name: str, description: str, tooltip: str) -> QWidget:
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 2, 0, 2)
+    layout.setSpacing(2)
+
+    name_label = QLabel(name)
+    name_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+    layout.addWidget(name_label)
+
+    if description.strip():
+        desc_label = QLabel(_truncate(description, NAME_CELL_PREVIEW_CHARS))
+        desc_label.setObjectName("muted")
+        desc_label.setWordWrap(False)
+        desc_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        layout.addWidget(desc_label)
+
+    container.setToolTip(tooltip or name)
+    return container
+
+
 class ResourcePage(QWidget):
     rescan_requested = Signal(str)
     sync_requested = Signal(str, object)
@@ -57,7 +95,7 @@ class ResourcePage(QWidget):
         layout.addWidget(self._build_toolbar_card())
         layout.addWidget(self._build_table_card(title), 1)
     def _build_toolbar_card(self) -> QWidget:
-        card = CardFrame("筛选与动作", "右侧矩阵点击即同步或移除；左侧勾选用于批量同步或撤销。")
+        card = CardFrame()
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
@@ -233,12 +271,11 @@ class ResourcePage(QWidget):
     def _fill_row(self, row_index: int, row: dict[str, object]) -> None:
         self._set_select_cell(row_index, row["name"])
         type_label = "目录" if row["isDirectory"] else "文件"
-        values = [row["name"], type_label]
-        for column, value in enumerate(values, start=1):
-            item = QTableWidgetItem(value)
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            item.setToolTip(value)
-            self.table.setItem(row_index, column, item)
+        self._set_name_cell(row_index, row)
+        type_item = QTableWidgetItem(type_label)
+        type_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        type_item.setToolTip(type_label)
+        self.table.setItem(row_index, 2, type_item)
         for offset, (environment_id, tool_id, _label, _tooltip) in enumerate(MATRIX_COLUMNS):
             item = QTableWidgetItem()
             item.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -250,6 +287,7 @@ class ResourcePage(QWidget):
         upgrade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         upgrade_item.setToolTip("点击升级：仅同步“目标缺失/源更新于目标”的条目，跳过覆盖风险项。")
         self.table.setItem(row_index, ACTION_COLUMN, upgrade_item)
+        self._sync_row_height(row_index, row.get("description", ""))
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
         checkbox = QCheckBox()
@@ -262,6 +300,17 @@ class ResourcePage(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(checkbox)
         self.table.setCellWidget(row_index, 0, wrapper)
+
+    def _set_name_cell(self, row_index: int, row: dict[str, object]) -> None:
+        name = str(row.get("name", ""))
+        description = str(row.get("description", ""))
+        path = str(row.get("path", ""))
+        tooltip = _build_name_tooltip(description, path)
+        self.table.setCellWidget(row_index, 1, _build_name_cell(name, description, tooltip))
+
+    def _sync_row_height(self, row_index: int, description: str) -> None:
+        height = ROW_HEIGHT_WITH_DESCRIPTION if description.strip() else ROW_HEIGHT_DEFAULT
+        self.table.setRowHeight(row_index, height)
 
     def _toggle_selected(self, name: str, state: int) -> None:
         if state == Qt.CheckState.Checked.value:

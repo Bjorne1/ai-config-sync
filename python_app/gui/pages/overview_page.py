@@ -2,7 +2,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..dashboard import has_wsl_assignments
-from ..widgets import ActionButton, BadgeLabel, CardFrame, HeaderBlock, MetricCard, layout_container
+from ..widgets import ActionButton, BadgeLabel, CardFrame, MetricCard, layout_container
 
 
 class OverviewPage(QWidget):
@@ -17,13 +17,6 @@ class OverviewPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        layout.addWidget(
-            HeaderBlock(
-                "01 / Overview",
-                "编辑部总控台",
-                "工业灰 + 安全橙的作业面板，把资源、环境和最近动作压缩进一张更紧凑的工单。",
-            )
-        )
         layout.addWidget(self._build_metric_strip())
         layout.addWidget(self._build_board())
         layout.addStretch(1)

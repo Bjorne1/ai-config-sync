@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.last_sync_summary: str | None = None
         self.cleanup_result: dict[str, object] | None = None
         self.tool_results: list[dict[str, object]] = []
+        self.update_tool_statuses: dict[str, dict[str, object]] = {}
         self.busy: dict[str, bool] = {}
         self.setWindowTitle("AI Config Sync")
         self.resize(1520, 960)
@@ -177,7 +178,23 @@ class MainWindow(QMainWindow):
 
     def set_snapshot(self, snapshot: dict[str, object]) -> None:
         self.snapshot = deepcopy(snapshot)
+        statuses = snapshot.get("updateToolStatuses", {})
+        if isinstance(statuses, dict):
+            self.update_tool_statuses = deepcopy(statuses)
+        else:
+            self.update_tool_statuses = {}
         self._refresh_views()
+
+    def set_update_tool_statuses(self, statuses: dict[str, dict[str, object]]) -> None:
+        self.update_tool_statuses = deepcopy(statuses) if isinstance(statuses, dict) else {}
+        if not self.snapshot:
+            return
+        self.tools_page.set_context(
+            self.snapshot["config"]["updateTools"],
+            self.tool_results,
+            self.update_tool_statuses,
+        )
+        self._refresh_busy()
 
     def set_logs(self, logs: list[dict[str, str]]) -> None:
         self.logs = deepcopy(logs)
@@ -226,7 +243,7 @@ class MainWindow(QMainWindow):
         self.tools_page.set_context(
             self.snapshot["config"]["updateTools"],
             self.tool_results,
-            self.snapshot.get("updateToolStatuses", {}),
+            self.update_tool_statuses,
         )
         self._refresh_busy()
 

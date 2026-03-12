@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from .markdown_description import read_description_from_markdown, read_description_from_skill_folder
 
 def scan_skills(source_dir: str) -> list[dict[str, object]]:
     source_path = Path(source_dir)
@@ -10,11 +11,14 @@ def scan_skills(source_dir: str) -> list[dict[str, object]]:
         if item.name.startswith(".") or item.name == ".gitkeep":
             continue
         if item.is_file() or item.is_dir():
+            meta = read_description_from_skill_folder(item)
             skills.append(
                 {
                     "name": item.name,
                     "path": str(item),
                     "isDirectory": item.is_dir(),
+                    "description": meta.description if meta else "",
+                    "descriptionSource": meta.source if meta else "",
                 }
             )
     return skills
@@ -29,6 +33,7 @@ def scan_commands(source_dir: str) -> list[dict[str, object]]:
         if item.name.startswith("."):
             continue
         if item.is_file() and item.suffix == ".md":
+            meta = read_description_from_markdown(item)
             commands.append(
                 {
                     "name": item.name,
@@ -36,6 +41,8 @@ def scan_commands(source_dir: str) -> list[dict[str, object]]:
                     "isDirectory": False,
                     "parent": None,
                     "children": [],
+                    "description": meta.description if meta else "",
+                    "descriptionSource": meta.source if meta else "",
                 }
             )
             continue
@@ -46,6 +53,7 @@ def scan_commands(source_dir: str) -> list[dict[str, object]]:
             for child in sorted(item.iterdir(), key=lambda entry: entry.name.lower())
             if child.is_file() and child.suffix == ".md" and not child.name.startswith(".")
         ]
+        summary = f"包含 {len(children)} 个子命令" if children else ""
         commands.append(
             {
                 "name": item.name,
@@ -53,6 +61,8 @@ def scan_commands(source_dir: str) -> list[dict[str, object]]:
                 "isDirectory": True,
                 "parent": None,
                 "children": children,
+                "description": summary,
+                "descriptionSource": "derived" if summary else "",
             }
         )
     return commands

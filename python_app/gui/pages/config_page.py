@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ...core.tool_definitions import TOOL_IDS
 from ..dashboard import serialize
-from ..widgets import ActionButton, CardFrame, HeaderBlock, layout_container
+from ..widgets import ActionButton, CardFrame, layout_container
 
 
 class ConfigPage(QWidget):
@@ -32,9 +32,6 @@ class ConfigPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        layout.addWidget(
-            HeaderBlock("05 / Config", "配置矩阵", "修改同步模式、源目录、WSL 和目标路径，保存后由外部控制器提交。")
-        )
         layout.addWidget(self._build_top_cards())
         layout.addWidget(self._build_target_stack())
         layout.addWidget(self._build_support_card())

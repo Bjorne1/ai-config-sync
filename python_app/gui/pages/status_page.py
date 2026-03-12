@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QGridLayout, QPlainTextEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from ..dashboard import STATE_LABELS
-from ..widgets import CardFrame, HeaderBlock, configure_table, layout_container
+from ..widgets import CardFrame, configure_table, layout_container
 
 
 class StatusPage(QWidget):
@@ -13,9 +13,6 @@ class StatusPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        layout.addWidget(
-            HeaderBlock("04 / Status", "状态台账", "环境状态、异常条目和动作日志放在同一页，便于直接定位问题。")
-        )
         layout.addWidget(self._build_top_row())
         layout.addWidget(self._build_issue_card(), 1)
 
