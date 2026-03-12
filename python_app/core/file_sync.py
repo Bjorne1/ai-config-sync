@@ -3,6 +3,10 @@ import shutil
 from pathlib import Path
 
 
+def _copy_tree(source_path: str, target_path: str) -> None:
+    shutil.copytree(source_path, target_path, copy_function=shutil.copyfile)
+
+
 def _get_lstat(target_path: str):
     try:
         return os.lstat(target_path)
@@ -49,9 +53,9 @@ def is_synced_copy(source_path: str, target_path: str) -> bool:
 def _copy_path(source_path: str, target_path: str) -> None:
     source = Path(source_path)
     if source.is_dir():
-        shutil.copytree(source_path, target_path)
+        _copy_tree(source_path, target_path)
         return
-    shutil.copy2(source_path, target_path)
+    shutil.copyfile(source_path, target_path)
 
 
 def create_copy(source_path: str, target_path: str) -> dict[str, object]:
