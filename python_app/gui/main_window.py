@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from .dashboard import build_issue_rows, build_resource_rows, count_cleanup_candidates, overview_stats
+from .event_filters import WheelBlocker
 from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
 from .pages.overview_page import OverviewPage
@@ -105,12 +106,15 @@ class MainWindow(QMainWindow):
         self.error_banner.hide()
         self.error_banner.setStyleSheet("border: 1px solid #b91c1c; border-radius: 14px; padding: 10px 12px; background: #fee2e2; color: #991b1b;")
         layout.addWidget(self.error_banner)
-        scroll = QScrollArea()
-        scroll.setObjectName("workspaceScroll")
-        scroll.setWidgetResizable(True)
-        layout.addWidget(scroll, 1)
+        self.workspace_scroll = QScrollArea()
+        self.workspace_scroll.setObjectName("workspaceScroll")
+        self.workspace_scroll.setWidgetResizable(True)
+        layout.addWidget(self.workspace_scroll, 1)
+        self._workspace_wheel_blocker = WheelBlocker(self.workspace_scroll)
+        self.workspace_scroll.installEventFilter(self._workspace_wheel_blocker)
+        self.workspace_scroll.viewport().installEventFilter(self._workspace_wheel_blocker)
         container = QWidget()
-        scroll.setWidget(container)
+        self.workspace_scroll.setWidget(container)
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         self.pages = QStackedWidget()
@@ -158,6 +162,19 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for page_key, button in self.nav_buttons.items():
             button.set_active(page_key == key)
+        self._update_workspace_scroll_policy(key)
+
+    def _update_workspace_scroll_policy(self, key: str) -> None:
+        scrollable_pages = {"status", "config", "tools"}
+        enabled = key in scrollable_pages
+        policy = Qt.ScrollBarPolicy.ScrollBarAsNeeded if enabled else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        self.workspace_scroll.setVerticalScrollBarPolicy(policy)
+        self.workspace_scroll.setHorizontalScrollBarPolicy(policy)
+        self.workspace_scroll.verticalScrollBar().setEnabled(enabled)
+        self.workspace_scroll.horizontalScrollBar().setEnabled(enabled)
+        self._workspace_wheel_blocker.set_enabled(not enabled)
+        if not enabled:
+            self.workspace_scroll.verticalScrollBar().setValue(0)
 
     def set_snapshot(self, snapshot: dict[str, object]) -> None:
         self.snapshot = deepcopy(snapshot)

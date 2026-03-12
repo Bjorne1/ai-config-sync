@@ -108,6 +108,31 @@ class AppServiceTests(unittest.TestCase):
             self.assertEqual(len(result), 1)
             self.assertTrue(result[0]["success"])
 
+    def test_remove_resources_deletes_synced_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _create_config(root)
+            config["resources"]["skills"] = {}
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                }
+            )
+
+            app_service.sync_resources("skills", ["demo-skill"], {"demo-skill": {"windows": ["claude"]}})
+            target_path = root / "targets" / "claude" / "skills" / "demo-skill"
+            self.assertTrue(target_path.exists())
+
+            result = app_service.remove_resources("skills", ["demo-skill"], {"demo-skill": {"windows": ["claude"]}})
+
+            self.assertFalse(target_path.exists())
+            self.assertTrue(result)
+            self.assertTrue(result[0]["success"])
+
 
 if __name__ == "__main__":
     unittest.main()

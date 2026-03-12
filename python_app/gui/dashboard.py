@@ -39,14 +39,24 @@ def _has_assignments(configured_targets: dict[str, list[str]]) -> bool:
     return any(configured_targets.get(environment_id) for environment_id in configured_targets)
 
 
-def summarize_entries(entries: list[dict[str, object]], configured_targets: dict[str, list[str]]) -> tuple[str, str]:
+def summarize_entries(
+    entries: list[dict[str, object]],
+    configured_targets: dict[str, list[str]],
+    detected_targets: dict[str, list[str]],
+) -> tuple[str, str]:
     if not _has_assignments(configured_targets):
+        if _has_assignments(detected_targets):
+            return "idle", "已检测到目标（待保存分配）"
         return "idle", STATE_LABELS["idle"]
     if not entries:
         return "partial", "已分配但尚无状态明细"
     ordered = sorted(entries, key=lambda entry: STATE_PRIORITY[entry["state"]])
     summary = ordered[0]
-    return summary["state"], summary.get("message") or STATE_LABELS[summary["state"]]
+    message = summary.get("message") or STATE_LABELS[summary["state"]]
+    if len(entries) <= 1:
+        return summary["state"], message
+    environment_label = "WIN" if summary["environmentId"] == "windows" else "WSL"
+    return summary["state"], f"{environment_label}/{summary['toolId'].upper()} · {message}"
 
 
 def build_resource_rows(
@@ -76,6 +86,7 @@ def build_resource_rows(
         summary_state, summary_message = summarize_entries(
             status.get("entries", []) if status else [],
             configured_targets,
+            detected_targets,
         )
         rows.append(
             {

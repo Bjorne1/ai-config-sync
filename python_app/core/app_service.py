@@ -13,6 +13,7 @@ from .resource_operations import (
     cleanup_invalid_resources,
     sync_configured_resources,
 )
+from .remove_operations import remove_configured_resources
 from .resource_service import scan_resources
 from .runtime_service import build_environment_list, build_wsl_runtime
 from .updater import update_all_tools
@@ -120,6 +121,16 @@ class AppService:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
         return sync_configured_resources(config, kind, environments, names, assignments)
+
+    def remove_resources(
+        self,
+        kind: str,
+        names: list[str] | None = None,
+        assignments: dict[str, dict[str, list[str]]] | None = None,
+    ) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        return remove_configured_resources(config, kind, environments, names, assignments)
 
     def update_tools(self) -> list[dict[str, object]]:
         config = self.deps.load_config()

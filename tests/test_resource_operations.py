@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from python_app.core.resource_operations import detect_existing_targets
+from python_app.core.resource_operations import aggregate_states, detect_existing_targets
 from python_app.core.runtime_service import build_environment_list
 from python_app.core.scanner import scan_skills
 
@@ -86,6 +86,22 @@ class ResourceOperationsTests(unittest.TestCase):
             detected = detect_existing_targets(config, "skills", resource, environment_list)
 
         self.assertEqual(detected, {"windows": ["claude"]})
+
+    def test_aggregate_states_preserves_single_conflict_message(self) -> None:
+        self.assertEqual(
+            aggregate_states([{"state": "conflict", "message": "目标内容与源不一致"}]),
+            {"state": "conflict", "message": "目标内容与源不一致"},
+        )
+
+    def test_aggregate_states_includes_conflict_ratio_for_multiple_targets(self) -> None:
+        summary = aggregate_states(
+            [
+                {"state": "conflict", "message": "目标内容与源不一致"},
+                {"state": "healthy", "message": "已同步"},
+            ]
+        )
+        self.assertEqual(summary["state"], "conflict")
+        self.assertIn("（1/2）", summary["message"])
 
 
 if __name__ == "__main__":

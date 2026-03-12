@@ -19,7 +19,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(window.windowTitle(), "AI Config Sync")
         self.assertIsNotNone(window.pages)
 
-    def test_resource_page_uses_compact_status_text_with_full_tooltip(self) -> None:
+    def test_resource_page_hides_tool_matrix_in_main_table(self) -> None:
         page = ResourcePage("commands")
         page.set_rows(
             [
@@ -27,27 +27,18 @@ class GuiSmokeTests(unittest.TestCase):
                     "name": "brainstorming.md",
                     "path": r"D:\wcs_project\ai-config-sync\commands\brainstorming.md",
                     "isDirectory": False,
-                    "summaryMessage": "部分目标存在冲突",
                     "effectiveTargets": {},
                     "configuredTargets": {},
-                    "entries": [
-                        {"environmentId": "windows", "toolId": "claude", "state": "conflict"},
-                        {"environmentId": "windows", "toolId": "codex", "state": "conflict"},
-                        {"environmentId": "wsl", "toolId": "gemini", "state": "missing"},
-                    ],
+                    "entries": [],
                 }
             ]
         )
 
-        status_item = page.table.item(0, 5)
-        self.assertEqual(status_item.text(), "存在冲突 2 · 目标缺失 1")
-        self.assertEqual(
-            status_item.toolTip(),
-            "windows/claude: 存在冲突 | windows/codex: 存在冲突 | wsl/gemini: 目标缺失",
-        )
+        self.assertEqual(page.table.horizontalHeaderItem(1).text(), "名称")
+        self.assertEqual(page.table.horizontalHeaderItem(2).text(), "类型")
         frozen_view = page.table.frozen_view()
-        self.assertTrue(all(page.table.isColumnHidden(column) for column in range(6, 14)))
-        self.assertTrue(all(not frozen_view.isColumnHidden(column) for column in range(6, 14)))
+        self.assertTrue(all(page.table.isColumnHidden(column) for column in range(3, 11)))
+        self.assertTrue(all(not frozen_view.isColumnHidden(column) for column in range(3, 11)))
 
 
 if __name__ == "__main__":

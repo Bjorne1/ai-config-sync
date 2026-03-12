@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Callable
 
+from copy import deepcopy
 from PySide6.QtCore import QObject
 
 from .core.app_service import AppService, create_app_service
@@ -81,14 +82,39 @@ class AppController(QObject):
         label = "同步 Skills" if kind == "skills" else "同步 Commands"
         names: list[str] = []
         assignments = None
+        action = "sync"
+        commit_targets = None
         if isinstance(payload, dict):
+            raw_action = payload.get("action")
+            action = raw_action if raw_action in {"sync", "remove"} else "sync"
             raw_names = payload.get("names")
             raw_assignments = payload.get("assignments")
+            raw_commit_targets = payload.get("commitTargets")
             names = raw_names if isinstance(raw_names, list) else []
             assignments = raw_assignments if isinstance(raw_assignments, dict) else None
+            commit_targets = raw_commit_targets if isinstance(raw_commit_targets, dict) else None
         elif isinstance(payload, list):
             names = payload
-        task = lambda: self.service.sync_resources(kind, names, assignments)
+        if action == "remove":
+            label = "移除 Skills" if kind == "skills" else "移除 Commands"
+
+        def task() -> object:
+            if commit_targets is not None:
+                if len(names) != 1 or not isinstance(names[0], str):
+                    raise ValueError("commitTargets requires exactly one resource name.")
+                config = self.service.get_config()
+                current = config["resources"][kind]
+                next_assignments = deepcopy(current) if isinstance(current, dict) else {}
+                has_targets = any(commit_targets.get(environment_id) for environment_id in ("windows", "wsl"))
+                if has_targets:
+                    next_assignments[names[0]] = commit_targets
+                else:
+                    next_assignments.pop(names[0], None)
+                self.service.replace_resource_map(kind, next_assignments)
+            if action == "remove":
+                return self.service.remove_resources(kind, names, assignments)
+            return self.service.sync_resources(kind, names, assignments)
+
         self._run_task(key, label, task, lambda result: self._after_partial_sync(kind, result))
 
     def _after_partial_sync(self, kind: str, result: list[dict[str, object]]) -> None:

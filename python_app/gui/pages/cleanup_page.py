@@ -1,8 +1,12 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from ..dashboard import summarize_cleanup
+from ..event_filters import WheelBlocker
+from ..pagination import Pager, paginate
 from ..widgets import ActionButton, CardFrame, HeaderBlock, configure_table
+
+CLEANUP_ROWS_PER_PAGE = 10
 
 
 class CleanupPage(QWidget):
@@ -10,6 +14,10 @@ class CleanupPage(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._page_index = 0
+        self._page_size = CLEANUP_ROWS_PER_PAGE
+        self._cleaned: list[dict[str, object]] = []
+        self._visible: list[dict[str, object]] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -36,14 +44,30 @@ class CleanupPage(QWidget):
         self.summary_table = QTableWidget(0, 4)
         self.summary_table.setHorizontalHeaderLabels(("资源", "工具", "环境", "目标"))
         configure_table(self.summary_table, stretch_columns=(0, 3))
-        self.result_card.body_layout.addWidget(self.summary_table)
+        self.summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.summary_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._table_wheel_blocker = WheelBlocker(self.summary_table)
+        self._table_wheel_blocker.set_enabled(True)
+        self.summary_table.viewport().installEventFilter(self._table_wheel_blocker)
+        self.pager = Pager()
+        self.pager.page_requested.connect(self._set_page)
+        self.result_card.body_layout.addWidget(self.pager)
+        self.result_card.body_layout.addWidget(self.summary_table, 1)
         return self.result_card
 
     def set_context(self, candidate_count: int, result: dict[str, object] | None) -> None:
-        cleaned = result["cleaned"] if result else []
-        self.summary_text.setText(f"候选项 {candidate_count} 条 · {summarize_cleanup(cleaned)}")
-        self.summary_table.setRowCount(len(cleaned))
-        for row_index, item in enumerate(cleaned):
+        self._cleaned = list(result["cleaned"] if result else [])
+        self.summary_text.setText(f"候选项 {candidate_count} 条 · {summarize_cleanup(self._cleaned)}")
+        self._rebuild_table()
+
+    def _set_page(self, index: int) -> None:
+        self._page_index = index
+        self._rebuild_table()
+
+    def _rebuild_table(self) -> None:
+        self._visible, self._page_index, page_count, total = paginate(self._cleaned, self._page_index, self._page_size)
+        self.summary_table.setRowCount(len(self._visible))
+        for row_index, item in enumerate(self._visible):
             values = [
                 f"{item['kind']} / {item['name']}",
                 item["toolId"],
@@ -52,6 +76,7 @@ class CleanupPage(QWidget):
             ]
             for column, value in enumerate(values):
                 self.summary_table.setItem(row_index, column, QTableWidgetItem(str(value)))
+        self.pager.set_state(self._page_index, page_count, total)
 
     def set_busy(self, busy: bool) -> None:
         self.run_button.set_busy(busy)

@@ -42,7 +42,18 @@
     }
   },
   "resources": {
-    "skills": {},
+    "skills": {
+      "brainstorming_tool": {
+        "windows": [
+          "claude",
+          "codex",
+          "antigravity"
+        ],
+        "wsl": [
+          "codex"
+        ]
+      }
+    },
     "commands": {
       "brainstorming.md": {
         "windows": [
@@ -103,6 +114,10 @@
     "OpenSpec": {
       "type": "npm",
       "package": "@fission-ai/openspec"
+    },
+    "gemini": {
+      "type": "npm",
+      "package": "@google/gemini-cli"
     }
   }
 }

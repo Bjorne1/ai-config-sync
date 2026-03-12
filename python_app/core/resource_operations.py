@@ -12,6 +12,7 @@ from .resource_service import (
 from .runtime_service import build_availability
 from .sync_engine import describe_target_state, remove_target, sync_entry
 from .tool_definitions import TOOL_IDS
+from .cleanup_targets import get_cleanup_targets
 
 
 def aggregate_states(states: list[dict[str, object]]) -> dict[str, str]:
@@ -19,13 +20,23 @@ def aggregate_states(states: list[dict[str, object]]) -> dict[str, str]:
     if not states:
         return {"state": "missing", "message": "未发现可同步项"}
     if "conflict" in kinds:
-        return {"state": "conflict", "message": "部分目标存在冲突"}
+        conflict_states = [state for state in states if state["state"] == "conflict"]
+        if len(states) == 1:
+            message = conflict_states[0].get("message") or "目标存在冲突"
+            return {"state": "conflict", "message": message}
+        return {
+            "state": "conflict",
+            "message": f"部分目标存在冲突（{len(conflict_states)}/{len(states)}）",
+        }
     if "source_missing" in kinds:
-        return {"state": "source_missing", "message": "源文件不存在"}
+        message = next((state.get("message") for state in states if state["state"] == "source_missing"), None) or "源文件不存在"
+        return {"state": "source_missing", "message": message}
     if "tool_unavailable" in kinds:
-        return {"state": "tool_unavailable", "message": "工具目录不存在"}
+        message = next((state.get("message") for state in states if state["state"] == "tool_unavailable"), None) or "工具目录不存在"
+        return {"state": "tool_unavailable", "message": message}
     if "environment_error" in kinds:
-        return {"state": "environment_error", "message": "环境不可用"}
+        message = next((state.get("message") for state in states if state["state"] == "environment_error"), None) or "环境不可用"
+        return {"state": "environment_error", "message": message}
     if all(kind == "healthy" for kind in kinds):
         return {"state": "healthy", "message": "已同步"}
     if all(kind == "missing" for kind in kinds):
@@ -219,26 +230,6 @@ def sync_configured_resources(
                     )
     return sync_details
 
-
-def _get_cleanup_targets(kind: str, resource_name: str, entry: dict[str, object]) -> list[str]:
-    if entry["targets"] and kind != "commands":
-        return entry["targets"]
-    if not entry["targetPath"]:
-        return entry["targets"]
-    if kind != "commands":
-        return [str(Path(entry["targetPath"]) / resource_name)]
-    direct_path = str(Path(entry["targetPath"]) / resource_name)
-    flattened: list[str] = []
-    target_dir = Path(entry["targetPath"])
-    if target_dir.exists():
-        flattened = [
-            str(target_dir / item.name)
-            for item in target_dir.iterdir()
-            if item.name.startswith(f"{resource_name}-")
-        ]
-    return list(dict.fromkeys([*entry["targets"], direct_path, *flattened]))
-
-
 def cleanup_invalid_resources(
     config: dict[str, object],
     environment_list: dict[str, object],
@@ -253,15 +244,15 @@ def cleanup_invalid_resources(
             )
             if has_missing_source:
                 next_config["resources"][kind].pop(resource["name"], None)
-            for entry in resource["entries"]:
-                if entry["state"] not in {"conflict", "missing", "source_missing"}:
-                    continue
-                for target_path in _get_cleanup_targets(resource["kind"], resource["name"], entry):
-                    result = remove_target(target_path)
-                    cleaned.append(
-                        {
-                            **entry,
-                            **result,
+                for entry in resource["entries"]:
+                    if entry["state"] not in {"conflict", "missing", "source_missing"}:
+                        continue
+                    for target_path in get_cleanup_targets(resource["kind"], resource["name"], entry):
+                        result = remove_target(target_path)
+                        cleaned.append(
+                            {
+                                **entry,
+                                **result,
                             "kind": kind,
                             "name": resource["name"],
                             "targetPath": target_path,
