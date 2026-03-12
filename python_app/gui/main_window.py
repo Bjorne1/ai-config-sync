@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
     save_config_requested = Signal(object)
     cleanup_requested = Signal()
     update_tools_requested = Signal()
+    update_tool_requested = Signal(str)
     save_tool_definitions_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -151,6 +152,7 @@ class MainWindow(QMainWindow):
         self.config_page.save_requested.connect(self.save_config_requested.emit)
         self.cleanup_page.cleanup_requested.connect(self.cleanup_requested.emit)
         self.tools_page.update_requested.connect(self.update_tools_requested.emit)
+        self.tools_page.update_tool_requested.connect(self.update_tool_requested.emit)
         self.tools_page.definitions_save_requested.connect(self.save_tool_definitions_requested.emit)
         self.set_current_page("overview")
 
@@ -221,7 +223,11 @@ class MainWindow(QMainWindow):
         self.status_page.set_context(self.snapshot["status"]["environments"], issues, self.logs, self.last_sync_summary)
         self.config_page.set_context(self.snapshot["config"], self.snapshot["wslRuntime"])
         self.cleanup_page.set_context(cleanup_candidates, self.cleanup_result)
-        self.tools_page.set_context(self.snapshot["config"]["updateTools"], self.tool_results)
+        self.tools_page.set_context(
+            self.snapshot["config"]["updateTools"],
+            self.tool_results,
+            self.snapshot.get("updateToolStatuses", {}),
+        )
         self._refresh_busy()
 
     def _resource_rows(self, kind: str) -> list[dict[str, object]]:
@@ -240,7 +246,10 @@ class MainWindow(QMainWindow):
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
         self.cleanup_page.set_busy(self._busy("cleanup"))
-        self.tools_page.set_busy(self._busy("updateTools"), self._busy("saveToolDefinitions"))
+        self.tools_page.set_busy(
+            self._busy("updateTools") or self._busy("updateTool"),
+            self._busy("saveToolDefinitions"),
+        )
 
     def _busy(self, key: str) -> bool:
         if key in self.busy:

@@ -17,7 +17,7 @@ from .resource_operations import (
 from .remove_operations import remove_configured_resources
 from .resource_service import scan_resources
 from .runtime_service import build_environment_list, build_wsl_runtime
-from .updater import update_all_tools
+from .updater import build_update_tool_statuses, update_all_tools
 
 
 def _replace_resource_map(
@@ -145,7 +145,27 @@ class AppService:
 
     def update_tools(self) -> list[dict[str, object]]:
         config = self.deps.load_config()
-        return self.deps.update_all_tools(config["updateTools"])
+        wsl_runtime = build_wsl_runtime(config, self._runtime_deps())
+        wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
+        return self.deps.update_all_tools(config["updateTools"], wsl_distro=wsl_distro)
+
+    def update_tool(self, name: str) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        tools = config["updateTools"]
+        if name not in tools:
+            raise ValueError(f"未找到更新定义：{name}")
+        wsl_runtime = build_wsl_runtime(config, self._runtime_deps())
+        wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
+        return self.deps.update_all_tools({name: tools[name]}, wsl_distro=wsl_distro)
+
+    def get_update_tool_statuses(
+        self,
+        config: dict[str, object],
+        wsl_runtime: dict[str, object],
+    ) -> dict[str, dict[str, object]]:
+        wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
+        tools = config["updateTools"]
+        return build_update_tool_statuses(tools, wsl_distro=wsl_distro)
 
     def _runtime_deps(self) -> dict[str, Callable]:
         return {

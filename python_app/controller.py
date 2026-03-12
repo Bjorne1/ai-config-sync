@@ -53,16 +53,19 @@ class AppController(QObject):
         self.window.save_config_requested.connect(self._save_config)
         self.window.cleanup_requested.connect(self._cleanup)
         self.window.update_tools_requested.connect(self._update_tools)
+        self.window.update_tool_requested.connect(self._update_tool)
         self.window.save_tool_definitions_requested.connect(self._save_tool_definitions)
 
     def _fetch_snapshot(self) -> dict[str, object]:
         config = self.service.get_config()
         status = self.service.get_status()
         wsl_runtime = self.service.get_wsl_distros()
+        tool_statuses = self.service.get_update_tool_statuses(config, wsl_runtime)
         return {
             "config": config,
             "status": {**status, "config": config},
             "wslRuntime": wsl_runtime,
+            "updateToolStatuses": tool_statuses,
             "inventory": {
                 "skills": self.service.scan_resources("skills"),
                 "commands": self.service.scan_resources("commands"),
@@ -123,7 +126,19 @@ class AppController(QObject):
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterCleanup")
 
     def _update_tools(self) -> None:
-        self._run_task("updateTools", "更新工具", self.service.update_tools, self.window.set_tool_results)
+        self._run_task("updateTools", "更新工具", self.service.update_tools, self._after_update_tools)
+
+    def _after_update_tools(self, results: list[dict[str, object]]) -> None:
+        self.window.set_tool_results(results)
+        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterUpdateTools")
+
+    def _update_tool(self, name: str) -> None:
+        self._run_task(
+            "updateTool",
+            f"更新工具：{name}",
+            lambda: self.service.update_tool(name),
+            self._after_update_tools,
+        )
 
     def _save_tool_definitions(self, definitions: dict[str, dict[str, str]]) -> None:
         self._run_task(
