@@ -29,9 +29,9 @@ MATRIX_COLUMNS = (
 )
 MATRIX_START_COLUMN = 3
 MATRIX_END_COLUMN = MATRIX_START_COLUMN + len(MATRIX_COLUMNS) - 1
-UPGRADE_COLUMN = MATRIX_END_COLUMN + 1
+ACTION_COLUMN = MATRIX_END_COLUMN + 1
 
-TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS), "升级")
+TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS), "操作")
 MATRIX_GROUPS = (
     ("WIN", tuple(range(MATRIX_START_COLUMN, MATRIX_START_COLUMN + 4))),
     ("WSL", tuple(range(MATRIX_START_COLUMN + 4, MATRIX_START_COLUMN + 8))),
@@ -51,8 +51,8 @@ def is_matrix_cell(index: QModelIndex) -> bool:
     return MATRIX_START_COLUMN <= index.column() <= MATRIX_END_COLUMN
 
 
-def is_upgrade_cell(index: QModelIndex) -> bool:
-    return index.column() == UPGRADE_COLUMN
+def is_action_cell(index: QModelIndex) -> bool:
+    return index.column() == ACTION_COLUMN
 
 
 def matrix_column(environment_id: str, tool_id: str) -> int:

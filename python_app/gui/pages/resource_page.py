@@ -18,15 +18,15 @@ from ..logo_matrix import (
     LOGO_ACTIVE_ROLE,
     LOGO_STATE_ROLE,
     LOGO_TOOL_ROLE,
+    ACTION_COLUMN,
     MATRIX_COLUMNS,
     MATRIX_END_COLUMN,
     MATRIX_GROUPS,
     TABLE_HEADERS,
     ToolLogoDelegate,
     find_matrix_entry,
-    UPGRADE_COLUMN,
+    is_action_cell,
     is_matrix_cell,
-    is_upgrade_cell,
     matrix_column,
     matrix_tooltip,
 )
@@ -122,7 +122,7 @@ class ResourcePage(QWidget):
                 elif column <= MATRIX_END_COLUMN:
                     item.setToolTip(MATRIX_COLUMNS[column - 3][3])
                 else:
-                    item.setToolTip("升级：仅在 copy 模式下，当源更新于目标时可执行。")
+                    item.setToolTip("操作：仅在 copy 模式下，当源更新于目标时可执行“升级”。")
         self._logo_delegate = ToolLogoDelegate(self.table)
         for column in range(3, MATRIX_END_COLUMN + 1):
             self.table.setItemDelegateForColumn(column, self._logo_delegate)
@@ -249,7 +249,7 @@ class ResourcePage(QWidget):
         upgrade_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         upgrade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         upgrade_item.setToolTip("点击升级：仅同步“目标缺失/源更新于目标”的条目，跳过覆盖风险项。")
-        self.table.setItem(row_index, UPGRADE_COLUMN, upgrade_item)
+        self.table.setItem(row_index, ACTION_COLUMN, upgrade_item)
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
         checkbox = QCheckBox()
@@ -317,7 +317,7 @@ class ResourcePage(QWidget):
     def _handle_matrix_clicked(self, index: QModelIndex) -> None:
         if self._updating_table:
             return
-        if is_upgrade_cell(index):
+        if is_action_cell(index):
             self._handle_upgrade_clicked(index)
             return
         if not is_matrix_cell(index):

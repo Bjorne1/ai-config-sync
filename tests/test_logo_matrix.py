@@ -1,6 +1,6 @@
 import unittest
 
-from python_app.gui.logo_matrix import MATRIX_END_COLUMN, MATRIX_GROUPS, TABLE_HEADERS, UPGRADE_COLUMN
+from python_app.gui.logo_matrix import ACTION_COLUMN, MATRIX_END_COLUMN, MATRIX_GROUPS, TABLE_HEADERS
 
 
 class LogoMatrixHeaderTests(unittest.TestCase):
@@ -10,7 +10,7 @@ class LogoMatrixHeaderTests(unittest.TestCase):
     def test_tool_headers_are_hidden_when_logos_are_visible(self) -> None:
         self.assertEqual(TABLE_HEADERS[:3], ("选中", "名称", "类型"))
         self.assertTrue(all(header == "" for header in TABLE_HEADERS[3 : MATRIX_END_COLUMN + 1]))
-        self.assertEqual(TABLE_HEADERS[UPGRADE_COLUMN], "升级")
+        self.assertEqual(TABLE_HEADERS[ACTION_COLUMN], "操作")
 
 
 if __name__ == "__main__":
