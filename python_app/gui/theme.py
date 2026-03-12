@@ -19,6 +19,8 @@ INFO = "#2563eb"
 STATE_COLORS = {
     "healthy": (SUCCESS, "#dcfce7"),
     "missing": (WARNING, "#fef3c7"),
+    "outdated": (WARNING, "#ffedd5"),
+    "ahead": (ERROR, "#fee2e2"),
     "conflict": (ERROR, "#fee2e2"),
     "source_missing": (ERROR, "#fee2e2"),
     "tool_unavailable": (TEXT_MUTED, "#e2e8f0"),

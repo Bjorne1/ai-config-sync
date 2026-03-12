@@ -15,17 +15,18 @@ class FileSyncCopyTests(unittest.TestCase):
             target_path = root / "target.md"
             source_path.write_text("# hello", encoding="utf-8")
 
-            with mock.patch.object(file_sync.shutil, "copy2", side_effect=AssertionError("copy2 must not be used")):
+            with mock.patch.object(file_sync.shutil, "copy2", wraps=shutil.copy2) as copy2_mock:
                 result = file_sync.create_copy(str(source_path), str(target_path))
 
             self.assertTrue(result["success"])
+            self.assertTrue(copy2_mock.called)
             self.assertEqual(target_path.read_text(encoding="utf-8"), "# hello")
 
     def test_create_copy_uses_copyfile_for_directories(self) -> None:
         original_copytree = shutil.copytree
 
         def _copytree_wrapper(*args, **kwargs):
-            self.assertIs(kwargs.get("copy_function"), file_sync.shutil.copyfile)
+            self.assertIs(kwargs.get("copy_function"), file_sync.shutil.copy2)
             return original_copytree(*args, **kwargs)
 
         with tempfile.TemporaryDirectory() as temp_dir:

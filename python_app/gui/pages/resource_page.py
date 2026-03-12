@@ -19,11 +19,14 @@ from ..logo_matrix import (
     LOGO_STATE_ROLE,
     LOGO_TOOL_ROLE,
     MATRIX_COLUMNS,
+    MATRIX_END_COLUMN,
     MATRIX_GROUPS,
     TABLE_HEADERS,
     ToolLogoDelegate,
     find_matrix_entry,
-    is_logo_matrix_cell,
+    UPGRADE_COLUMN,
+    is_matrix_cell,
+    is_upgrade_cell,
     matrix_column,
     matrix_tooltip,
 )
@@ -65,17 +68,20 @@ class ResourcePage(QWidget):
         self.search.textChanged.connect(self._handle_filter_changed)
         self.rescan_button = ActionButton("重扫源目录", "secondary")
         self.sync_button = ActionButton("同步勾选项", "secondary")
+        self.upgrade_button = ActionButton("升级所有", "secondary")
         self.remove_button = ActionButton("撤销勾选项", "danger")
         self.rescan_button.clicked.connect(lambda: self.rescan_requested.emit(self.kind))
         self.sync_button.clicked.connect(self._emit_sync)
+        self.upgrade_button.clicked.connect(self._emit_upgrade_all)
         self.remove_button.clicked.connect(self._emit_remove)
         grid.addWidget(self.search, 0, 0, 1, 2)
         grid.addWidget(self.rescan_button, 0, 2)
         grid.addWidget(self.sync_button, 0, 3)
-        grid.addWidget(self.remove_button, 0, 4)
+        grid.addWidget(self.upgrade_button, 0, 4)
+        grid.addWidget(self.remove_button, 0, 5)
         self.meta = QLabel("0 条记录")
         self.meta.setObjectName("muted")
-        grid.addWidget(self.meta, 1, 0, 1, 5)
+        grid.addWidget(self.meta, 1, 0, 1, 6)
         card.body_layout.addLayout(grid)
         return card
     def _build_table_card(self, title: str) -> QWidget:
@@ -111,11 +117,16 @@ class ResourcePage(QWidget):
         for column, label in enumerate(TABLE_HEADERS):
             item = self.table.horizontalHeaderItem(column)
             if item:
-                item.setToolTip(label if column < 3 else MATRIX_COLUMNS[column - 3][3])
+                if column < 3:
+                    item.setToolTip(label)
+                elif column <= MATRIX_END_COLUMN:
+                    item.setToolTip(MATRIX_COLUMNS[column - 3][3])
+                else:
+                    item.setToolTip("升级：仅在 copy 模式下，当源更新于目标时可执行。")
         self._logo_delegate = ToolLogoDelegate(self.table)
-        for column in range(3, len(TABLE_HEADERS)):
+        for column in range(3, MATRIX_END_COLUMN + 1):
             self.table.setItemDelegateForColumn(column, self._logo_delegate)
-        frozen_view.setItemDelegate(self._logo_delegate)
+            frozen_view.setItemDelegateForColumn(column, self._logo_delegate)
         self.table.clicked.connect(self._handle_matrix_clicked)
         frozen_view.clicked.connect(self._handle_matrix_clicked)
         self.table.sync_frozen_view()
@@ -157,6 +168,18 @@ class ResourcePage(QWidget):
             },
         )
 
+    def _emit_upgrade_all(self) -> None:
+        names = self._upgradeable_names()
+        assignments = self._build_upgrade_assignments(names)
+        self.sync_requested.emit(
+            self.kind,
+            {
+                "action": "upgrade",
+                "names": names,
+                "assignments": assignments,
+            },
+        )
+
     def set_rows(self, rows: list[dict[str, object]]) -> None:
         self.rows = deepcopy(rows)
         self.assignments = {
@@ -177,6 +200,7 @@ class ResourcePage(QWidget):
     def set_busy(self, rescan_busy: bool, sync_busy: bool) -> None:
         self.rescan_button.set_busy(rescan_busy)
         self.sync_button.set_busy(sync_busy)
+        self.upgrade_button.set_busy(sync_busy)
         self.remove_button.set_busy(sync_busy)
 
     def _handle_filter_changed(self) -> None:
@@ -221,6 +245,11 @@ class ResourcePage(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._apply_matrix_item_state(item, row, environment_id, tool_id)
             self.table.setItem(row_index, offset + 3, item)
+        upgrade_item = QTableWidgetItem("升级" if self._is_upgradeable_row(row) else "")
+        upgrade_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        upgrade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        upgrade_item.setToolTip("点击升级：仅同步“目标缺失/源更新于目标”的条目，跳过覆盖风险项。")
+        self.table.setItem(row_index, UPGRADE_COLUMN, upgrade_item)
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
         checkbox = QCheckBox()
@@ -250,6 +279,22 @@ class ResourcePage(QWidget):
         tools = list(TOOL_IDS)
         return {name: {"windows": tools, "wsl": tools} for name in names}
 
+    def _is_upgradeable_row(self, row: dict[str, object]) -> bool:
+        return any(entry.get("state") in {"missing", "outdated"} for entry in row.get("entries", []))
+
+    def _upgradeable_names(self) -> list[str]:
+        names: list[str] = []
+        for row in self._filtered_rows():
+            if not self._is_upgradeable_row(row):
+                continue
+            targets = self.assignments.get(row["name"], {})
+            if self._has_assignments(targets):
+                names.append(row["name"])
+        return sorted(names)
+
+    def _build_upgrade_assignments(self, names: list[str]) -> dict[str, dict[str, list[str]]]:
+        return {name: deepcopy(self.assignments.get(name, {})) for name in names}
+
     def _toggle_tool(self, name: str, environment_id: str, tool_id: str, state: int) -> None:
         targets = deepcopy(self.assignments.get(name, {}))
         tools = list(targets.get(environment_id, []))
@@ -270,7 +315,12 @@ class ResourcePage(QWidget):
         self._update_meta()
 
     def _handle_matrix_clicked(self, index: QModelIndex) -> None:
-        if self._updating_table or not is_logo_matrix_cell(index):
+        if self._updating_table:
+            return
+        if is_upgrade_cell(index):
+            self._handle_upgrade_clicked(index)
+            return
+        if not is_matrix_cell(index):
             return
         row = index.row()
         if row >= len(self._visible_rows):
@@ -284,6 +334,26 @@ class ResourcePage(QWidget):
         self._refresh_matrix_cell(row, resource, environment_id, tool_id)
         payload = {"action": "sync" if state == Qt.CheckState.Checked.value else "remove", "names": [name], "assignments": {name: {environment_id: [tool_id]}}, "commitTargets": deepcopy(self.assignments.get(name, {}))}
         self.sync_requested.emit(self.kind, payload)
+
+    def _handle_upgrade_clicked(self, index: QModelIndex) -> None:
+        row = index.row()
+        if row >= len(self._visible_rows):
+            return
+        resource = self._visible_rows[row]
+        if not self._is_upgradeable_row(resource):
+            return
+        name = resource["name"]
+        targets = deepcopy(self.assignments.get(name, {}))
+        if not self._has_assignments(targets):
+            return
+        self.sync_requested.emit(
+            self.kind,
+            {
+                "action": "upgrade",
+                "names": [name],
+                "assignments": {name: targets},
+            },
+        )
 
     def _has_assignments(self, targets: dict[str, list[str]]) -> bool:
         return any(targets.get(environment_id) for environment_id in ("windows", "wsl"))

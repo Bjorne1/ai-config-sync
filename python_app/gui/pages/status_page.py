@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QGridLayout, QPlainTextEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
+from ..dashboard import STATE_LABELS
 from ..widgets import CardFrame, HeaderBlock, configure_table, layout_container
 
 
@@ -86,7 +87,7 @@ class StatusPage(QWidget):
                 f"{issue['kind']} / {issue['name']}",
                 issue["environmentId"],
                 issue["toolId"],
-                issue["state"],
+                STATE_LABELS.get(issue["state"], issue["state"]),
                 issue.get("targetPath") or issue["message"],
             ]
             for column, value in enumerate(values):

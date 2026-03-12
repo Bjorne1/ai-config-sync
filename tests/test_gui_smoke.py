@@ -4,9 +4,10 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QCheckBox
 
 from python_app.gui.logo_matrix import LOGO_ACTIVE_ROLE, LOGO_TOOL_ROLE, ToolLogoDelegate
+from python_app.gui.header_views import GroupedHeaderView
 from python_app.gui.main_window import MainWindow
 from python_app.gui.pages.resource_page import ResourcePage
 
@@ -71,6 +72,42 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertFalse(page.table.item(0, 4).data(LOGO_ACTIVE_ROLE))
         self.assertEqual(captured[0][0], "commands")
         self.assertEqual(captured[0][1]["action"], "remove")
+
+    def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:
+        page = ResourcePage("commands")
+        page.set_rows(
+            [
+                {
+                    "name": "a.md",
+                    "path": r"D:\wcs_project\ai-config-sync\commands\a.md",
+                    "isDirectory": False,
+                    "effectiveTargets": {},
+                    "configuredTargets": {},
+                    "entries": [],
+                },
+                {
+                    "name": "b.md",
+                    "path": r"D:\wcs_project\ai-config-sync\commands\b.md",
+                    "isDirectory": False,
+                    "effectiveTargets": {},
+                    "configuredTargets": {},
+                    "entries": [],
+                },
+            ]
+        )
+
+        header = page.table.horizontalHeader()
+        self.assertIsInstance(header, GroupedHeaderView)
+
+        header.checkbox_state_changed.emit(0, Qt.CheckState.Checked.value)
+        self.assertEqual(page.get_selected_names(), ["a.md", "b.md"])
+        self.assertTrue(page.table.cellWidget(0, 0).findChild(QCheckBox).isChecked())
+        self.assertTrue(page.table.cellWidget(1, 0).findChild(QCheckBox).isChecked())
+
+        header.checkbox_state_changed.emit(0, Qt.CheckState.Unchecked.value)
+        self.assertEqual(page.get_selected_names(), [])
+        self.assertFalse(page.table.cellWidget(0, 0).findChild(QCheckBox).isChecked())
+        self.assertFalse(page.table.cellWidget(1, 0).findChild(QCheckBox).isChecked())
 
     def test_logo_delegate_uses_white_background_for_all_active_states(self) -> None:
         delegate = ToolLogoDelegate()

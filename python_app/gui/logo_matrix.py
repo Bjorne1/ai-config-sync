@@ -27,8 +27,15 @@ MATRIX_COLUMNS = (
     ("wsl", "gemini", "", "WSL / Gemini"),
     ("wsl", "antigravity", "", "WSL / Antigravity"),
 )
-TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS))
-MATRIX_GROUPS = (("WIN", (3, 4, 5, 6)), ("WSL", (7, 8, 9, 10)))
+MATRIX_START_COLUMN = 3
+MATRIX_END_COLUMN = MATRIX_START_COLUMN + len(MATRIX_COLUMNS) - 1
+UPGRADE_COLUMN = MATRIX_END_COLUMN + 1
+
+TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS), "升级")
+MATRIX_GROUPS = (
+    ("WIN", tuple(range(MATRIX_START_COLUMN, MATRIX_START_COLUMN + 4))),
+    ("WSL", tuple(range(MATRIX_START_COLUMN + 4, MATRIX_START_COLUMN + 8))),
+)
 
 BADGE_SIZE = QSize(42, 26)
 ICON_SIZE = 16
@@ -40,12 +47,16 @@ def logo_root() -> Path:
     return Path(__file__).resolve().parents[2] / "logo"
 
 
-def is_logo_matrix_cell(index: QModelIndex) -> bool:
-    return index.column() >= 3
+def is_matrix_cell(index: QModelIndex) -> bool:
+    return MATRIX_START_COLUMN <= index.column() <= MATRIX_END_COLUMN
+
+
+def is_upgrade_cell(index: QModelIndex) -> bool:
+    return index.column() == UPGRADE_COLUMN
 
 
 def matrix_column(environment_id: str, tool_id: str) -> int:
-    for offset, (env_id, current_tool_id, _label, _tooltip) in enumerate(MATRIX_COLUMNS, start=3):
+    for offset, (env_id, current_tool_id, _label, _tooltip) in enumerate(MATRIX_COLUMNS, start=MATRIX_START_COLUMN):
         if env_id == environment_id and current_tool_id == tool_id:
             return offset
     raise ValueError(f"unknown matrix cell: {environment_id}/{tool_id}")
@@ -86,7 +97,7 @@ class ToolLogoDelegate(QStyledItemDelegate):
         return QSize(max(base.width(), BADGE_SIZE.width() + 16), max(base.height(), BADGE_SIZE.height() + 12))
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
-        if not is_logo_matrix_cell(index):
+        if not is_matrix_cell(index):
             super().paint(painter, option, index)
             return
         painter.save()

@@ -118,7 +118,7 @@ class OverviewPage(QWidget):
         self.wsl_badge.setText("WSL ACTIVE" if wsl_active else "WSL IDLE")
         self.wsl_badge.set_state("partial" if wsl_active else "idle")
         self.issue_badge.setText("需处理" if issue_count else "运行平稳")
-        self.issue_badge.set_state("conflict" if issue_count else "healthy")
+        self.issue_badge.set_state("ahead" if issue_count else "healthy")
         source_text = f"{snapshot['config']['sourceDirs']['skills']}\n{snapshot['config']['sourceDirs']['commands']}"
         self.source_label.setText(source_text)
         sync_text = last_sync_summary or "尚未执行同步批次"

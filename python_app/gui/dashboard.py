@@ -5,6 +5,8 @@ from ..core.resource_operations import detect_existing_targets, merge_environmen
 STATE_LABELS = {
     "healthy": "已同步",
     "missing": "目标缺失",
+    "outdated": "可升级",
+    "ahead": "覆盖风险",
     "conflict": "存在冲突",
     "source_missing": "源不存在",
     "tool_unavailable": "工具未安装",
@@ -13,14 +15,16 @@ STATE_LABELS = {
     "idle": "未分配",
 }
 STATE_PRIORITY = {
-    "conflict": 0,
-    "source_missing": 1,
-    "environment_error": 2,
-    "tool_unavailable": 3,
-    "missing": 4,
-    "partial": 5,
-    "healthy": 6,
-    "idle": 7,
+    "ahead": 0,
+    "conflict": 1,
+    "source_missing": 2,
+    "environment_error": 3,
+    "tool_unavailable": 4,
+    "missing": 5,
+    "outdated": 6,
+    "partial": 7,
+    "healthy": 8,
+    "idle": 9,
 }
 
 
@@ -113,7 +117,7 @@ def build_issue_rows(snapshot: dict[str, object] | None) -> list[dict[str, objec
     issues: list[dict[str, object]] = []
     for resource in [*snapshot["status"]["skills"], *snapshot["status"]["commands"]]:
         for entry in resource["entries"]:
-            if entry["state"] == "healthy":
+            if entry["state"] != "ahead":
                 continue
             issues.append(
                 {

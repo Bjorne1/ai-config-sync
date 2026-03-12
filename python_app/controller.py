@@ -87,6 +87,8 @@ class AppController(QObject):
         label = "同步 Skills" if kind == "skills" else "同步 Commands"
         if request.action == "remove":
             label = "移除 Skills" if kind == "skills" else "移除 Commands"
+        if request.action == "upgrade":
+            label = "升级 Skills" if kind == "skills" else "升级 Commands"
 
         def task() -> object:
             if not request.names:
@@ -94,6 +96,8 @@ class AppController(QObject):
             self._apply_commit(kind, request)
             if request.action == "remove":
                 return self.service.remove_resources(kind, request.names, request.assignments)
+            if request.action == "upgrade":
+                return self.service.upgrade_resources(kind, request.names, request.assignments)
             return self.service.sync_resources(kind, request.names, request.assignments)
 
         self._run_task(key, label, task, lambda result: self._after_partial_sync(kind, result))
@@ -192,8 +196,8 @@ class AppController(QObject):
             raise ValueError("payload must be a dict or list.")
 
         action = payload.get("action", "sync")
-        if action not in {"sync", "remove"}:
-            raise ValueError("action must be 'sync' or 'remove'.")
+        if action not in {"sync", "remove", "upgrade"}:
+            raise ValueError("action must be 'sync' or 'remove' or 'upgrade'.")
         raw_names = payload.get("names", [])
         if not isinstance(raw_names, list) or any(not isinstance(name, str) for name in raw_names):
             raise ValueError("names must be a list of strings.")

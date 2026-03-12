@@ -5,6 +5,8 @@ from typing import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QTableWidget
 
+from ..header_views import GroupedHeaderView
+
 
 class PageSelection:
     def __init__(
@@ -20,22 +22,19 @@ class PageSelection:
         self._on_changed = on_changed
 
     def configure_header_checkbox(self) -> None:
-        item = self._table.horizontalHeaderItem(0)
-        if item is None:
+        header = self._table.horizontalHeader()
+        if not isinstance(header, GroupedHeaderView):
             return
-        item.setText("")
-        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-        item.setData(Qt.ItemDataRole.CheckStateRole, Qt.CheckState.Unchecked)
-        item.setToolTip("勾选/取消勾选当前页全部条目")
-        self._table.horizontalHeader().sectionClicked.connect(self._handle_header_clicked)
+        header.enable_checkbox(0)
+        header.checkbox_state_changed.connect(self._handle_header_checkbox_changed)
 
     def update_header_state(self) -> None:
-        item = self._table.horizontalHeaderItem(0)
-        if item is None:
+        header = self._table.horizontalHeader()
+        if not isinstance(header, GroupedHeaderView):
             return
         names = self._get_visible_names()
         if not names:
-            item.setData(Qt.ItemDataRole.CheckStateRole, Qt.CheckState.Unchecked)
+            header.set_checkbox_state(0, Qt.CheckState.Unchecked)
             return
         selected = sum(1 for name in names if name in self._selected_names)
         if selected == 0:
@@ -44,16 +43,13 @@ class PageSelection:
             state = Qt.CheckState.Checked
         else:
             state = Qt.CheckState.PartiallyChecked
-        item.setData(Qt.ItemDataRole.CheckStateRole, state)
+        header.set_checkbox_state(0, state)
 
-    def _handle_header_clicked(self, section: int) -> None:
+    def _handle_header_checkbox_changed(self, section: int, state_value: int) -> None:
         if section != 0:
             return
-        item = self._table.horizontalHeaderItem(0)
-        if item is None:
-            return
-        state = item.data(Qt.ItemDataRole.CheckStateRole) or Qt.CheckState.Unchecked
-        self._set_visible_selected(state != Qt.CheckState.Checked)
+        state = Qt.CheckState(state_value)
+        self._set_visible_selected(state == Qt.CheckState.Checked)
 
     def _set_visible_selected(self, checked: bool) -> None:
         names = self._get_visible_names()
@@ -71,4 +67,3 @@ class PageSelection:
             checkbox.blockSignals(False)
         self.update_header_state()
         self._on_changed()
-

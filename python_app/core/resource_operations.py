@@ -19,6 +19,15 @@ def aggregate_states(states: list[dict[str, object]]) -> dict[str, str]:
     kinds = [state["state"] for state in states]
     if not states:
         return {"state": "missing", "message": "未发现可同步项"}
+    if "ahead" in kinds:
+        ahead_states = [state for state in states if state["state"] == "ahead"]
+        if len(states) == 1:
+            message = ahead_states[0].get("message") or "目标更新于源，存在覆盖风险"
+            return {"state": "ahead", "message": message}
+        return {
+            "state": "ahead",
+            "message": f"部分目标更新于源（{len(ahead_states)}/{len(states)}）",
+        }
     if "conflict" in kinds:
         conflict_states = [state for state in states if state["state"] == "conflict"]
         if len(states) == 1:
@@ -41,6 +50,15 @@ def aggregate_states(states: list[dict[str, object]]) -> dict[str, str]:
         return {"state": "healthy", "message": "已同步"}
     if all(kind == "missing" for kind in kinds):
         return {"state": "missing", "message": "目标缺失"}
+    if "outdated" in kinds:
+        outdated_states = [state for state in states if state["state"] == "outdated"]
+        if len(states) == 1:
+            message = outdated_states[0].get("message") or "源更新于目标，可升级"
+            return {"state": "outdated", "message": message}
+        return {
+            "state": "outdated",
+            "message": f"部分目标可升级（{len(outdated_states)}/{len(states)}）",
+        }
     return {"state": "partial", "message": "部分目标已同步"}
 
 
@@ -230,6 +248,91 @@ def sync_configured_resources(
                     )
     return sync_details
 
+
+def upgrade_configured_resources(
+    config: dict[str, object],
+    kind: str,
+    environment_list: dict[str, object],
+    requested_names: list[str] | None = None,
+    configured_override: dict[str, dict[str, list[str]]] | None = None,
+) -> list[dict[str, object]]:
+    if config["syncMode"] != "copy":
+        raise ValueError("升级仅支持 copy 模式。")
+    catalog = get_resource_catalog(config)
+    index = catalog["skillIndex"] if kind == "skills" else catalog["commandIndex"]
+    configured = configured_override if configured_override is not None else get_configured_resources(config, kind)
+    names = requested_names if requested_names is not None else list(configured.keys())
+    upgrade_details: list[dict[str, object]] = []
+    for name in names:
+        resource = get_resource_entry(config, kind, name, index)
+        configured_targets = configured.get(name, {})
+        for environment in _iter_enabled_environments(environment_list):
+            for tool_id in configured_targets.get(environment["id"], []):
+                items = expand_resource_items(config, kind, resource, tool_id)
+                availability = build_availability(environment, kind, tool_id)
+                if not availability["available"]:
+                    upgrade_details.append(
+                        {
+                            "kind": kind,
+                            "name": name,
+                            "toolId": tool_id,
+                            "environmentId": environment["id"],
+                            "success": False,
+                            "skipped": True,
+                            "message": availability["message"],
+                        }
+                    )
+                    continue
+                for item in items:
+                    target_path = str(Path(environment["targets"][kind][tool_id]) / item["name"])
+                    state = describe_target_state("copy", item["sourcePath"], target_path)
+                    if state["state"] in {"healthy"}:
+                        upgrade_details.append(
+                            {
+                                "kind": kind,
+                                "name": name,
+                                "toolId": tool_id,
+                                "environmentId": environment["id"],
+                                "targetPath": target_path,
+                                "success": False,
+                                "skipped": True,
+                                "message": "已是最新版本",
+                            }
+                        )
+                        continue
+                    if state["state"] in {"missing", "outdated"}:
+                        result = sync_entry(
+                            "copy",
+                            item["sourcePath"],
+                            target_path,
+                            item["isDirectory"],
+                        )
+                        upgrade_details.append(
+                            {
+                                "kind": kind,
+                                "name": name,
+                                "toolId": tool_id,
+                                "environmentId": environment["id"],
+                                "targetPath": target_path,
+                                **result,
+                            }
+                        )
+                        continue
+                    upgrade_details.append(
+                        {
+                            "kind": kind,
+                            "name": name,
+                            "toolId": tool_id,
+                            "environmentId": environment["id"],
+                            "targetPath": target_path,
+                            "success": False,
+                            "skipped": True,
+                            "message": state.get("message") or "不满足升级条件",
+                        }
+                    )
+    return upgrade_details
+
+
 def cleanup_invalid_resources(
     config: dict[str, object],
     environment_list: dict[str, object],
@@ -253,9 +356,9 @@ def cleanup_invalid_resources(
                             {
                                 **entry,
                                 **result,
-                            "kind": kind,
-                            "name": resource["name"],
-                            "targetPath": target_path,
-                        }
-                    )
+                                "kind": kind,
+                                "name": resource["name"],
+                                "targetPath": target_path,
+                            }
+                        )
     return {"cleaned": cleaned, "config": save_config(next_config)}

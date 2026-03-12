@@ -11,6 +11,7 @@ from .environment_service import (
 from .resource_operations import (
     build_resource_statuses,
     cleanup_invalid_resources,
+    upgrade_configured_resources,
     sync_configured_resources,
 )
 from .remove_operations import remove_configured_resources
@@ -121,6 +122,16 @@ class AppService:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
         return sync_configured_resources(config, kind, environments, names, assignments)
+
+    def upgrade_resources(
+        self,
+        kind: str,
+        names: list[str] | None = None,
+        assignments: dict[str, dict[str, list[str]]] | None = None,
+    ) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        return upgrade_configured_resources(config, kind, environments, names, assignments)
 
     def remove_resources(
         self,

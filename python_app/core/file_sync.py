@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def _copy_tree(source_path: str, target_path: str) -> None:
-    shutil.copytree(source_path, target_path, copy_function=shutil.copyfile)
+    shutil.copytree(source_path, target_path, copy_function=shutil.copy2)
 
 
 def _get_lstat(target_path: str):
@@ -55,7 +55,7 @@ def _copy_path(source_path: str, target_path: str) -> None:
     if source.is_dir():
         _copy_tree(source_path, target_path)
         return
-    shutil.copyfile(source_path, target_path)
+    shutil.copy2(source_path, target_path)
 
 
 def create_copy(source_path: str, target_path: str) -> dict[str, object]:
