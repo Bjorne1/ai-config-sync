@@ -1,4 +1,5 @@
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Callable
 
 from copy import deepcopy
@@ -8,6 +9,16 @@ from .core.app_service import AppService, create_app_service
 from .gui.dashboard import summarize_sync
 from .gui.main_window import MainWindow
 from .gui.task_runner import TaskThread
+
+
+@dataclass(frozen=True)
+class SyncRequest:
+    action: str
+    names: list[str]
+    assignments: dict[str, dict[str, list[str]]] | None
+    commit_targets: dict[str, list[str]] | None
+    commit_assignments: dict[str, dict[str, list[str]]] | None
+    commit_remove: bool
 
 
 class AppController(QObject):
@@ -72,41 +83,18 @@ class AppController(QObject):
 
     def _sync_selected(self, kind: str, payload: object) -> None:
         key = "syncSkills" if kind == "skills" else "syncCommands"
+        request = self._parse_sync_request(payload)
         label = "同步 Skills" if kind == "skills" else "同步 Commands"
-        names: list[str] = []
-        assignments = None
-        action = "sync"
-        commit_targets = None
-        if isinstance(payload, dict):
-            raw_action = payload.get("action")
-            action = raw_action if raw_action in {"sync", "remove"} else "sync"
-            raw_names = payload.get("names")
-            raw_assignments = payload.get("assignments")
-            raw_commit_targets = payload.get("commitTargets")
-            names = raw_names if isinstance(raw_names, list) else []
-            assignments = raw_assignments if isinstance(raw_assignments, dict) else None
-            commit_targets = raw_commit_targets if isinstance(raw_commit_targets, dict) else None
-        elif isinstance(payload, list):
-            names = payload
-        if action == "remove":
+        if request.action == "remove":
             label = "移除 Skills" if kind == "skills" else "移除 Commands"
 
         def task() -> object:
-            if commit_targets is not None:
-                if len(names) != 1 or not isinstance(names[0], str):
-                    raise ValueError("commitTargets requires exactly one resource name.")
-                config = self.service.get_config()
-                current = config["resources"][kind]
-                next_assignments = deepcopy(current) if isinstance(current, dict) else {}
-                has_targets = any(commit_targets.get(environment_id) for environment_id in ("windows", "wsl"))
-                if has_targets:
-                    next_assignments[names[0]] = commit_targets
-                else:
-                    next_assignments.pop(names[0], None)
-                self.service.replace_resource_map(kind, next_assignments)
-            if action == "remove":
-                return self.service.remove_resources(kind, names, assignments)
-            return self.service.sync_resources(kind, names, assignments)
+            if not request.names:
+                raise ValueError("未勾选任何条目。")
+            self._apply_commit(kind, request)
+            if request.action == "remove":
+                return self.service.remove_resources(kind, request.names, request.assignments)
+            return self.service.sync_resources(kind, request.names, request.assignments)
 
         self._run_task(key, label, task, lambda result: self._after_partial_sync(kind, result))
 
@@ -194,3 +182,80 @@ class AppController(QObject):
             *self.logs,
         ][:6]
         self.window.set_logs(self.logs)
+
+    def _parse_sync_request(self, payload: object) -> SyncRequest:
+        if isinstance(payload, list):
+            if any(not isinstance(name, str) for name in payload):
+                raise ValueError("names must be a list of strings.")
+            return SyncRequest("sync", payload, None, None, None, False)
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict or list.")
+
+        action = payload.get("action", "sync")
+        if action not in {"sync", "remove"}:
+            raise ValueError("action must be 'sync' or 'remove'.")
+        raw_names = payload.get("names", [])
+        if not isinstance(raw_names, list) or any(not isinstance(name, str) for name in raw_names):
+            raise ValueError("names must be a list of strings.")
+
+        assignments = None
+        if "assignments" in payload:
+            raw_assignments = payload.get("assignments")
+            if raw_assignments is not None and not isinstance(raw_assignments, dict):
+                raise ValueError("assignments must be a dict.")
+            assignments = raw_assignments
+
+        commit_targets = None
+        if "commitTargets" in payload:
+            raw_commit_targets = payload.get("commitTargets")
+            if raw_commit_targets is not None and not isinstance(raw_commit_targets, dict):
+                raise ValueError("commitTargets must be a dict.")
+            commit_targets = raw_commit_targets
+
+        commit_assignments = None
+        if "commitAssignments" in payload:
+            raw_commit_assignments = payload.get("commitAssignments")
+            if raw_commit_assignments is not None and not isinstance(raw_commit_assignments, dict):
+                raise ValueError("commitAssignments must be a dict.")
+            commit_assignments = raw_commit_assignments
+
+        commit_remove = bool(payload.get("commitRemove", False))
+        if commit_targets is not None and (commit_assignments is not None or commit_remove):
+            raise ValueError("commitTargets cannot be combined with commitAssignments/commitRemove.")
+        if commit_assignments is not None and commit_remove:
+            raise ValueError("commitAssignments cannot be combined with commitRemove.")
+        if commit_targets is not None and len(raw_names) != 1:
+            raise ValueError("commitTargets requires exactly one resource name.")
+        if commit_assignments is not None and set(raw_names) != set(commit_assignments.keys()):
+            raise ValueError("commitAssignments keys must match names.")
+        return SyncRequest(action, raw_names, assignments, commit_targets, commit_assignments, commit_remove)
+
+    def _apply_commit(self, kind: str, request: SyncRequest) -> None:
+        if request.commit_targets is not None:
+            name = request.names[0]
+            config = self.service.get_config()
+            current = config["resources"][kind]
+            next_assignments = deepcopy(current) if isinstance(current, dict) else {}
+            has_targets = any(request.commit_targets.get(environment_id) for environment_id in ("windows", "wsl"))
+            if has_targets:
+                next_assignments[name] = request.commit_targets
+            else:
+                next_assignments.pop(name, None)
+            self.service.replace_resource_map(kind, next_assignments)
+            return
+
+        if request.commit_assignments is not None:
+            config = self.service.get_config()
+            current = config["resources"][kind]
+            next_assignments = deepcopy(current) if isinstance(current, dict) else {}
+            for name, targets in request.commit_assignments.items():
+                next_assignments[name] = targets
+            self.service.replace_resource_map(kind, next_assignments)
+
+        if request.commit_remove:
+            config = self.service.get_config()
+            current = config["resources"][kind]
+            next_assignments = deepcopy(current) if isinstance(current, dict) else {}
+            for name in request.names:
+                next_assignments.pop(name, None)
+            self.service.replace_resource_map(kind, next_assignments)

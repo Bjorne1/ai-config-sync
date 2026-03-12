@@ -28,6 +28,7 @@ from ..logo_matrix import (
     matrix_tooltip,
 )
 from ..pagination import Pager, paginate
+from .resource_selection import PageSelection
 from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure_table
 RESOURCE_ROWS_PER_PAGE = 12
 class ResourcePage(QWidget):
@@ -40,6 +41,7 @@ class ResourcePage(QWidget):
         self.selected_names: set[str] = set()
         self.assignments: dict[str, dict[str, list[str]]] = {}
         self._updating_table = False
+        self._page_selection: PageSelection | None = None
         self._page_index = 0
         self._page_size = RESOURCE_ROWS_PER_PAGE
         self._visible_rows: list[dict[str, object]] = []
@@ -52,7 +54,7 @@ class ResourcePage(QWidget):
         layout.addWidget(self._build_toolbar_card())
         layout.addWidget(self._build_table_card(title), 1)
     def _build_toolbar_card(self) -> QWidget:
-        card = CardFrame("筛选与动作", "右侧矩阵点击即同步或移除；左侧勾选用于批量同步。")
+        card = CardFrame("筛选与动作", "右侧矩阵点击即同步或移除；左侧勾选用于批量同步或撤销。")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
@@ -63,14 +65,17 @@ class ResourcePage(QWidget):
         self.search.textChanged.connect(self._handle_filter_changed)
         self.rescan_button = ActionButton("重扫源目录", "secondary")
         self.sync_button = ActionButton("同步勾选项", "secondary")
+        self.remove_button = ActionButton("撤销勾选项", "danger")
         self.rescan_button.clicked.connect(lambda: self.rescan_requested.emit(self.kind))
         self.sync_button.clicked.connect(self._emit_sync)
+        self.remove_button.clicked.connect(self._emit_remove)
         grid.addWidget(self.search, 0, 0, 1, 2)
         grid.addWidget(self.rescan_button, 0, 2)
         grid.addWidget(self.sync_button, 0, 3)
+        grid.addWidget(self.remove_button, 0, 4)
         self.meta = QLabel("0 条记录")
         self.meta.setObjectName("muted")
-        grid.addWidget(self.meta, 1, 0, 1, 4)
+        grid.addWidget(self.meta, 1, 0, 1, 5)
         card.body_layout.addLayout(grid)
         return card
     def _build_table_card(self, title: str) -> QWidget:
@@ -101,6 +106,8 @@ class ResourcePage(QWidget):
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         frozen_view.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self._page_selection = PageSelection(self.table, self.selected_names, self._visible_names, self._update_meta)
+        self._page_selection.configure_header_checkbox()
         for column, label in enumerate(TABLE_HEADERS):
             item = self.table.horizontalHeaderItem(column)
             if item:
@@ -125,11 +132,28 @@ class ResourcePage(QWidget):
         return [row for row in self.rows if query in row["name"].lower() or query in row["path"].lower()]
 
     def _emit_sync(self) -> None:
+        names = self.get_selected_names()
+        assignments = self._build_bulk_assignments(names)
         self.sync_requested.emit(
             self.kind,
             {
-                "names": self.get_selected_names(),
-                "assignments": self.get_assignments(),
+                "action": "sync",
+                "names": names,
+                "assignments": assignments,
+                "commitAssignments": assignments,
+            },
+        )
+
+    def _emit_remove(self) -> None:
+        names = self.get_selected_names()
+        assignments = self._build_bulk_assignments(names)
+        self.sync_requested.emit(
+            self.kind,
+            {
+                "action": "remove",
+                "names": names,
+                "assignments": assignments,
+                "commitRemove": True,
             },
         )
 
@@ -153,6 +177,7 @@ class ResourcePage(QWidget):
     def set_busy(self, rescan_busy: bool, sync_busy: bool) -> None:
         self.rescan_button.set_busy(rescan_busy)
         self.sync_button.set_busy(sync_busy)
+        self.remove_button.set_busy(sync_busy)
 
     def _handle_filter_changed(self) -> None:
         self._page_index = 0
@@ -173,6 +198,8 @@ class ResourcePage(QWidget):
         self.table.blockSignals(False)
         self._updating_table = False
         self.table.sync_frozen_view()
+        if self._page_selection:
+            self._page_selection.update_header_state()
         self._update_meta()
         self.pager.set_state(self._page_index, page_count, total)
 
@@ -200,7 +227,7 @@ class ResourcePage(QWidget):
         checkbox.setChecked(name in self.selected_names)
         checkbox.stateChanged.connect(lambda state, item=name: self._toggle_selected(item, state))
         wrapper = QWidget()
-        wrapper.setToolTip("勾选后参与“同步勾选项”")
+        wrapper.setToolTip("勾选后参与“同步勾选项 / 撤销勾选项”")
         layout = QHBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -212,7 +239,16 @@ class ResourcePage(QWidget):
             self.selected_names.add(name)
         else:
             self.selected_names.discard(name)
+        if self._page_selection:
+            self._page_selection.update_header_state()
         self._update_meta()
+
+    def _visible_names(self) -> list[str]:
+        return [row["name"] for row in self._visible_rows]
+
+    def _build_bulk_assignments(self, names: list[str]) -> dict[str, dict[str, list[str]]]:
+        tools = list(TOOL_IDS)
+        return {name: {"windows": tools, "wsl": tools} for name in names}
 
     def _toggle_tool(self, name: str, environment_id: str, tool_id: str, state: int) -> None:
         targets = deepcopy(self.assignments.get(name, {}))
