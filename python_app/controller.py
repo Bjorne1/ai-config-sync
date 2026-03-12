@@ -37,7 +37,6 @@ class AppController(QObject):
         self.window.refresh_requested.connect(lambda: self.refresh_snapshot())
         self.window.sync_all_requested.connect(self._sync_all)
         self.window.rescan_requested.connect(self._rescan_kind)
-        self.window.save_assignments_requested.connect(self._save_assignments)
         self.window.sync_selected_requested.connect(self._sync_selected)
         self.window.reload_wsl_requested.connect(lambda: self.refresh_snapshot(busy_key="reloadWsl"))
         self.window.save_config_requested.connect(self._save_config)
@@ -70,12 +69,6 @@ class AppController(QObject):
     def _rescan_kind(self, kind: str) -> None:
         key = "scanSkills" if kind == "skills" else "scanCommands"
         self.refresh_snapshot(busy_key=key)
-
-    def _save_assignments(self, kind: str, assignments: dict[str, list[str]]) -> None:
-        key = "saveSkills" if kind == "skills" else "saveCommands"
-        label = "保存 Skills 分配" if kind == "skills" else "保存 Commands 分配"
-        task = lambda: self.service.replace_resource_map(kind, assignments)
-        self._run_task(key, label, task, lambda _result: self.refresh_snapshot(False, f"refreshAfter{key.title()}"))
 
     def _sync_selected(self, kind: str, payload: object) -> None:
         key = "syncSkills" if kind == "skills" else "syncCommands"

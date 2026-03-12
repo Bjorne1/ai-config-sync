@@ -46,7 +46,7 @@ def summarize_entries(
 ) -> tuple[str, str]:
     if not _has_assignments(configured_targets):
         if _has_assignments(detected_targets):
-            return "idle", "已检测到目标（待保存分配）"
+            return "idle", "已检测到目标"
         return "idle", STATE_LABELS["idle"]
     if not entries:
         return "partial", "已分配但尚无状态明细"

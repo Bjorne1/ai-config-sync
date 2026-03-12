@@ -50,6 +50,7 @@
           "antigravity"
         ],
         "wsl": [
+          "claude",
           "codex"
         ]
       }
@@ -89,6 +90,14 @@
           "claude",
           "codex",
           "gemini"
+        ]
+      },
+      "pua-debugging.md": {
+        "windows": [
+          "codex"
+        ],
+        "wsl": [
+          "codex"
         ]
       }
     }

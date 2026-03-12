@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ...core.tool_definitions import TOOL_IDS
-from ..dashboard import serialize
 from ..event_filters import WheelBlocker
 from ..logo_matrix import (
     LOGO_ACTIVE_ROLE,
@@ -33,7 +32,6 @@ from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure
 RESOURCE_ROWS_PER_PAGE = 12
 class ResourcePage(QWidget):
     rescan_requested = Signal(str)
-    save_requested = Signal(str, object)
     sync_requested = Signal(str, object)
     def __init__(self, kind: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -41,7 +39,6 @@ class ResourcePage(QWidget):
         self.rows: list[dict[str, object]] = []
         self.selected_names: set[str] = set()
         self.assignments: dict[str, dict[str, list[str]]] = {}
-        self._initial_assignments: dict[str, dict[str, list[str]]] = {}
         self._updating_table = False
         self._page_index = 0
         self._page_size = RESOURCE_ROWS_PER_PAGE
@@ -55,7 +52,7 @@ class ResourcePage(QWidget):
         layout.addWidget(self._build_toolbar_card())
         layout.addWidget(self._build_table_card(title), 1)
     def _build_toolbar_card(self) -> QWidget:
-        card = CardFrame("筛选与动作", "右侧矩阵勾选即同步，取消即移除；左侧用于批量同步勾选项。")
+        card = CardFrame("筛选与动作", "右侧矩阵点击即同步或移除；左侧勾选用于批量同步。")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
@@ -65,18 +62,15 @@ class ResourcePage(QWidget):
         self.search.setPlaceholderText(f"搜索 {self.kind} 名称或路径")
         self.search.textChanged.connect(self._handle_filter_changed)
         self.rescan_button = ActionButton("重扫源目录", "secondary")
-        self.save_button = ActionButton("保存分配", "primary")
         self.sync_button = ActionButton("同步勾选项", "secondary")
         self.rescan_button.clicked.connect(lambda: self.rescan_requested.emit(self.kind))
-        self.save_button.clicked.connect(self._emit_save)
         self.sync_button.clicked.connect(self._emit_sync)
         grid.addWidget(self.search, 0, 0, 1, 2)
         grid.addWidget(self.rescan_button, 0, 2)
-        grid.addWidget(self.save_button, 0, 3)
-        grid.addWidget(self.sync_button, 0, 4)
+        grid.addWidget(self.sync_button, 0, 3)
         self.meta = QLabel("0 条记录")
         self.meta.setObjectName("muted")
-        grid.addWidget(self.meta, 1, 0, 1, 5)
+        grid.addWidget(self.meta, 1, 0, 1, 4)
         card.body_layout.addLayout(grid)
         return card
     def _build_table_card(self, title: str) -> QWidget:
@@ -130,9 +124,6 @@ class ResourcePage(QWidget):
             return self.rows
         return [row for row in self.rows if query in row["name"].lower() or query in row["path"].lower()]
 
-    def _emit_save(self) -> None:
-        self.save_requested.emit(self.kind, self.get_assignments())
-
     def _emit_sync(self) -> None:
         self.sync_requested.emit(
             self.kind,
@@ -149,11 +140,6 @@ class ResourcePage(QWidget):
             for row in rows
             if self._has_assignments(row["effectiveTargets"])
         }
-        self._initial_assignments = {
-            row["name"]: deepcopy(row["configuredTargets"])
-            for row in rows
-            if self._has_assignments(row["configuredTargets"])
-        }
         self.selected_names &= {row["name"] for row in rows}
         self._rebuild_table()
 
@@ -164,9 +150,8 @@ class ResourcePage(QWidget):
         visible = {row["name"] for row in self._filtered_rows()}
         return sorted(self.selected_names & visible)
 
-    def set_busy(self, rescan_busy: bool, save_busy: bool, sync_busy: bool) -> None:
+    def set_busy(self, rescan_busy: bool, sync_busy: bool) -> None:
         self.rescan_button.set_busy(rescan_busy)
-        self.save_button.set_busy(save_busy)
         self.sync_button.set_busy(sync_busy)
 
     def _handle_filter_changed(self) -> None:
@@ -192,8 +177,7 @@ class ResourcePage(QWidget):
         self.pager.set_state(self._page_index, page_count, total)
 
     def _update_meta(self) -> None:
-        dirty = serialize(self.assignments) != serialize(self._initial_assignments)
-        self.meta.setText(f"{len(self.rows)} 条记录 · {'存在未保存分配' if dirty else '分配已同步'}")
+        self.meta.setText(f"{len(self.rows)} 条记录 · 已勾选 {len(self.selected_names)} 项")
 
     def _fill_row(self, row_index: int, row: dict[str, object]) -> None:
         self._set_select_cell(row_index, row["name"])
@@ -226,8 +210,9 @@ class ResourcePage(QWidget):
     def _toggle_selected(self, name: str, state: int) -> None:
         if state == Qt.CheckState.Checked.value:
             self.selected_names.add(name)
-            return
-        self.selected_names.discard(name)
+        else:
+            self.selected_names.discard(name)
+        self._update_meta()
 
     def _toggle_tool(self, name: str, environment_id: str, tool_id: str, state: int) -> None:
         targets = deepcopy(self.assignments.get(name, {}))

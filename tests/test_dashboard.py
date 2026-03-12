@@ -16,7 +16,7 @@ class DashboardSummarizeTests(unittest.TestCase):
             detected_targets={"windows": ["codex"]},
         )
         self.assertEqual(state, "idle")
-        self.assertEqual(message, "已检测到目标（待保存分配）")
+        self.assertEqual(message, "已检测到目标")
 
     def test_summarize_entries_marks_partial_when_configured_without_status(self) -> None:
         state, message = summarize_entries(
@@ -52,4 +52,3 @@ class DashboardSummarizeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
