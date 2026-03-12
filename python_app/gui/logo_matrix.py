@@ -18,14 +18,14 @@ LOGO_FILENAMES = {
 }
 
 MATRIX_COLUMNS = (
-    ("windows", "claude", "CLAUDE", "Windows / Claude"),
-    ("windows", "codex", "CODEX", "Windows / Codex"),
-    ("windows", "gemini", "GEMINI", "Windows / Gemini"),
-    ("windows", "antigravity", "AG", "Windows / Antigravity"),
-    ("wsl", "claude", "CLAUDE", "WSL / Claude"),
-    ("wsl", "codex", "CODEX", "WSL / Codex"),
-    ("wsl", "gemini", "GEMINI", "WSL / Gemini"),
-    ("wsl", "antigravity", "AG", "WSL / Antigravity"),
+    ("windows", "claude", "", "Windows / Claude"),
+    ("windows", "codex", "", "Windows / Codex"),
+    ("windows", "gemini", "", "Windows / Gemini"),
+    ("windows", "antigravity", "", "Windows / Antigravity"),
+    ("wsl", "claude", "", "WSL / Claude"),
+    ("wsl", "codex", "", "WSL / Codex"),
+    ("wsl", "gemini", "", "WSL / Gemini"),
+    ("wsl", "antigravity", "", "WSL / Antigravity"),
 )
 TABLE_HEADERS = ("选中", "名称", "类型", *(column[2] for column in MATRIX_COLUMNS))
 MATRIX_GROUPS = (("WIN", (3, 4, 5, 6)), ("WSL", (7, 8, 9, 10)))

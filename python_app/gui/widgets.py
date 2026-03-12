@@ -150,15 +150,18 @@ class GroupedHeaderView(QHeaderView):
         self._groups = groups
         self._grouped_columns = {column for _label, columns in groups for column in columns}
         self._top_height = 22
+        self._single_height = 30
         self.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.setMinimumHeight(52)
+        self._apply_header_height()
 
     def sizeHint(self):
         hint = super().sizeHint()
-        hint.setHeight(max(hint.height(), 52))
+        hint.setHeight(max(hint.height(), self._header_height()))
         return hint
 
     def paintEvent(self, event) -> None:
+        self._apply_header_height()
+        show_detail_row = self._show_group_detail_row()
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         for logical_index in range(self.count()):
@@ -169,13 +172,32 @@ class GroupedHeaderView(QHeaderView):
                 continue
             label = self._header_label(logical_index)
             if logical_index in self._grouped_columns:
-                self._draw_cell(painter, rect.adjusted(0, self._top_height, 0, 0), label)
+                if show_detail_row:
+                    self._draw_cell(painter, rect.adjusted(0, self._top_height, 0, 0), label)
                 continue
             self._draw_cell(painter, rect, label)
         for group_label, columns in self._groups:
-            rect = self._group_rect(columns)
+            rect = self._group_rect(columns, show_detail_row)
             if rect and rect.intersects(event.rect()):
                 self._draw_cell(painter, rect, group_label, center=True)
+
+    def _header_height(self) -> int:
+        if self._show_group_detail_row():
+            return self._top_height + self._single_height
+        return self._single_height
+
+    def _apply_header_height(self) -> None:
+        height = self._header_height()
+        if self.minimumHeight() == height and self.maximumHeight() == height:
+            return
+        self.setMinimumHeight(height)
+        self.setMaximumHeight(height)
+        self.updateGeometry()
+
+    def _show_group_detail_row(self) -> bool:
+        if not self._groups:
+            return False
+        return any(self._header_label(column).strip() for column in self._grouped_columns)
 
     def _header_label(self, logical_index: int) -> str:
         if not self.model():
@@ -191,13 +213,14 @@ class GroupedHeaderView(QHeaderView):
             0,
         )
 
-    def _group_rect(self, columns: tuple[int, ...]):
+    def _group_rect(self, columns: tuple[int, ...], show_detail_row: bool):
         visible = [column for column in columns if not self.isSectionHidden(column)]
         if not visible:
             return None
         left = self.sectionViewportPosition(visible[0])
         right = self.sectionViewportPosition(visible[-1]) + self.sectionSize(visible[-1])
-        return self.viewport().rect().adjusted(left, 0, right - self.viewport().width(), self._top_height - self.height())
+        bottom = self._top_height - self.height() if show_detail_row else 0
+        return self.viewport().rect().adjusted(left, 0, right - self.viewport().width(), bottom)
 
     def _draw_cell(self, painter: QPainter, rect, text: str, center: bool = False) -> None:
         painter.save()

@@ -41,6 +41,8 @@ class GuiSmokeTests(unittest.TestCase):
         frozen_view = page.table.frozen_view()
         self.assertTrue(all(page.table.isColumnHidden(column) for column in range(3, 11)))
         self.assertTrue(all(not frozen_view.isColumnHidden(column) for column in range(3, 11)))
+        self.assertEqual(frozen_view.horizontalHeader().minimumHeight(), 30)
+        self.assertEqual(frozen_view.horizontalHeader().maximumHeight(), 30)
 
     def test_resource_page_uses_logo_matrix_items_and_click_toggles_assignment(self) -> None:
         page = ResourcePage("commands")
