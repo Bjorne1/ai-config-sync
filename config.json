@@ -47,11 +47,112 @@
         "windows": [
           "claude",
           "codex",
+          "gemini",
           "antigravity"
         ],
         "wsl": [
           "claude",
-          "codex"
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "frontend-design": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "github-to-skills": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "pdf": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "skill-creator": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "skill-evolution-manager": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "skill-manager": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "sql-to-bean": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
         ]
       }
     },
@@ -60,24 +161,28 @@
         "windows": [
           "claude",
           "codex",
-          "gemini"
+          "gemini",
+          "antigravity"
         ],
         "wsl": [
           "claude",
           "codex",
-          "gemini"
+          "gemini",
+          "antigravity"
         ]
       },
       "commit": {
         "windows": [
           "claude",
           "codex",
-          "gemini"
+          "gemini",
+          "antigravity"
         ],
         "wsl": [
           "claude",
           "codex",
-          "gemini"
+          "gemini",
+          "antigravity"
         ]
       },
       "gudaspec": {
@@ -104,6 +209,12 @@
           "codex",
           "gemini",
           "antigravity"
+        ]
+      },
+      "wcs-image-generate.md": {
+        "windows": [
+          "claude",
+          "codex"
         ]
       }
     }

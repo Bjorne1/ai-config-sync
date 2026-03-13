@@ -37,6 +37,7 @@ RESOURCE_ROWS_PER_PAGE = 10
 NAME_CELL_PREVIEW_CHARS = 90
 ROW_HEIGHT_DEFAULT = 42
 ROW_HEIGHT_WITH_DESCRIPTION = 58
+ENVIRONMENT_IDS = ("windows", "wsl")
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -251,6 +252,7 @@ class ResourcePage(QWidget):
 
     def _rebuild_table(self) -> None:
         rows = self._filtered_rows()
+        self.pager.set_stats(self._count_installed(rows))
         self._visible_rows, self._page_index, page_count, total = paginate(rows, self._page_index, self._page_size)
         self._updating_table = True
         self.table.blockSignals(True)
@@ -264,6 +266,17 @@ class ResourcePage(QWidget):
             self._page_selection.update_header_state()
         self._update_meta()
         self.pager.set_state(self._page_index, page_count, total)
+
+    def _count_installed(self, rows: list[dict[str, object]]) -> dict[str, dict[str, int]]:
+        tools = list(TOOL_IDS)
+        stats = {env_id: {tool_id: 0 for tool_id in tools} for env_id in ENVIRONMENT_IDS}
+        for row in rows:
+            targets = row.get("effectiveTargets") or {}
+            for env_id in ENVIRONMENT_IDS:
+                for tool_id in targets.get(env_id, []) or []:
+                    if tool_id in stats[env_id]:
+                        stats[env_id][tool_id] += 1
+        return stats
 
     def _update_meta(self) -> None:
         self.meta.setText(f"{len(self.rows)} 条记录 · 已勾选 {len(self.selected_names)} 项")

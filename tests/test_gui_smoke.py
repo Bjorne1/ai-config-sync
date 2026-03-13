@@ -4,7 +4,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QCheckBox
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
 
 from python_app.gui.logo_matrix import LOGO_ACTIVE_ROLE, LOGO_TOOL_ROLE, ToolLogoDelegate
 from python_app.gui.header_views import GroupedHeaderView
@@ -119,6 +119,36 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(healthy_colors[1], "#ffffff")
         self.assertEqual(missing_colors[1], "#ffffff")
         self.assertEqual(conflict_colors[1], "#ffffff")
+
+    def test_resource_page_pager_shows_installed_counts_for_win_and_wsl(self) -> None:
+        page = ResourcePage("skills")
+        page.set_rows(
+            [
+                {
+                    "name": "a",
+                    "path": r"D:\wcs_project\ai-config-sync\skills\a",
+                    "isDirectory": True,
+                    "effectiveTargets": {"windows": ["claude", "codex"], "wsl": ["codex"]},
+                    "configuredTargets": {},
+                    "entries": [],
+                },
+                {
+                    "name": "b",
+                    "path": r"D:\wcs_project\ai-config-sync\skills\b",
+                    "isDirectory": True,
+                    "effectiveTargets": {"windows": ["codex"], "wsl": ["codex", "gemini"]},
+                    "configuredTargets": {},
+                    "entries": [],
+                },
+            ]
+        )
+
+        labels = {label.text() for label in page.pager.findChildren(QLabel)}
+        self.assertIn("WIN 已安装", labels)
+        self.assertIn("WSL 已安装", labels)
+        self.assertIn("Claude: 1", labels)
+        self.assertIn("Codex: 2", labels)
+        self.assertIn("Gemini: 1", labels)
 
 
 if __name__ == "__main__":
