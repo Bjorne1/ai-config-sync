@@ -90,7 +90,7 @@ class SkillUpstreamPage(QWidget):
         self.pager.page_requested.connect(self._set_page)
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(("选择", "名称", "URL", "本地版本", "远程版本", "状态"))
-        configure_table(self.table, stretch_columns=(1, 2))
+        configure_table(self.table, stretch_columns=(2,))
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -98,12 +98,14 @@ class SkillUpstreamPage(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0, 48)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(1, 160)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(3, 90)
+        self.table.setColumnWidth(3, 120)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 90)
+        self.table.setColumnWidth(4, 120)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(5, 100)
+        self.table.setColumnWidth(5, 140)
         card.body_layout.setSpacing(8)
         card.body_layout.addWidget(self.pager)
         card.body_layout.addWidget(self.table)
@@ -160,8 +162,8 @@ class SkillUpstreamPage(QWidget):
     def _append_row(self, row: dict[str, object]) -> None:
         name = str(row.get("name") or "")
         url = str(row.get("url") or "").strip() or "未配置"
-        installed = str(row.get("installedCommit") or "").strip() or "—"
         update = self._update_results.get(name, {})
+        installed = str(update.get("installedCommit") or row.get("installedCommit") or "").strip() or "未记录"
         latest = str(update.get("latestCommit") or "").strip() or "—"
         status = str(update.get("message") or ("未配置 URL" if url == "未配置" else "未检查"))
         index = self.table.rowCount()
@@ -264,9 +266,6 @@ class SkillUpstreamPage(QWidget):
 
     def _emit_check(self) -> None:
         names = self._selected_names()
-        if not names:
-            QMessageBox.warning(self, "检查失败", "请先选择 Skill。")
-            return
         self.check_requested.emit({"names": names})
 
     def _emit_upgrade(self) -> None:

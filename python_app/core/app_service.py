@@ -131,7 +131,9 @@ class AppService:
             if previous.get("url") == skill_url and previous.get("installedCommit"):
                 next_upstreams[skill_name] = {**previous, "url": skill_url}
             else:
-                next_upstreams[skill_name] = {"url": skill_url}
+                source = parse_github_tree_url(skill_url)
+                latest = get_latest_commit_sha(source)
+                next_upstreams[skill_name] = {"url": skill_url, "installedCommit": latest}
         return self.deps.save_skill_upstreams(next_upstreams)
 
     def add_skill_from_url(self, name: str, url: str) -> dict[str, object]:
@@ -155,6 +157,7 @@ class AppService:
     def check_skill_updates(self, names: list[str] | None = None) -> list[dict[str, object]]:
         upstreams = self.deps.load_skill_upstreams()
         selected = names or sorted(upstreams.keys())
+        dirty = False
         results: list[dict[str, object]] = []
         for name in selected:
             skill_name = validate_skill_name(name)
@@ -175,19 +178,10 @@ class AppService:
             installed = str(entry.get("installedCommit") or "").strip() or None
             source = parse_github_tree_url(url)
             latest = get_latest_commit_sha(source)
-            if installed is None:
-                results.append(
-                    {
-                        "name": skill_name,
-                        "configured": True,
-                        "url": url,
-                        "installedCommit": None,
-                        "latestCommit": latest,
-                        "updateAvailable": True,
-                        "message": "未记录已安装版本",
-                    }
-                )
-                continue
+            if installed is None and latest:
+                installed = latest
+                upstreams[skill_name] = {**entry, "installedCommit": installed}
+                dirty = True
             results.append(
                 {
                     "name": skill_name,
@@ -199,6 +193,8 @@ class AppService:
                     "message": "有更新" if latest and latest != installed else "已是最新",
                 }
             )
+        if dirty:
+            self.deps.save_skill_upstreams(upstreams)
         return results
 
     def upgrade_skill_sources(self, names: list[str]) -> list[dict[str, object]]:

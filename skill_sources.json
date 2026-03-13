@@ -3,22 +3,27 @@
   "skills": {
     "pua": {
       "url": "https://github.com/tanweai/pua/tree/main/skills/pua",
-      "installedCommit": "ac015ceb0e8511e8df65f640176417a8d35553d0"
+      "installedCommit": "dc80f0c9ce58a1808b0ce6a5cb3d843d2041addf"
     },
     "canvas-design": {
-      "url": "https://github.com/anthropics/skills/tree/main/skills/canvas-design"
+      "url": "https://github.com/anthropics/skills/tree/main/skills/canvas-design",
+      "installedCommit": "ef740771ac901e03fbca3ce4e1c453a96010f30a"
     },
     "doc-coauthoring": {
-      "url": "https://github.com/anthropics/skills/tree/main/skills/doc-coauthoring"
+      "url": "https://github.com/anthropics/skills/tree/main/skills/doc-coauthoring",
+      "installedCommit": "00756142ab04c82a447693cf373c4e0c554d1005"
     },
     "docx": {
-      "url": "https://github.com/anthropics/skills/tree/main/skills/docx"
+      "url": "https://github.com/anthropics/skills/tree/main/skills/docx",
+      "installedCommit": "3d59511518591fa82e6cfcf0438d68dd5dad3e76"
     },
     "frontend-design": {
-      "url": "https://github.com/anthropics/skills/tree/main/skills/frontend-design"
+      "url": "https://github.com/anthropics/skills/tree/main/skills/frontend-design",
+      "installedCommit": "00756142ab04c82a447693cf373c4e0c554d1005"
     },
     "pdf": {
-      "url": "https://github.com/anthropics/skills/tree/main/skills/pdf"
+      "url": "https://github.com/anthropics/skills/tree/main/skills/pdf",
+      "installedCommit": "1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563"
     }
   }
 }
