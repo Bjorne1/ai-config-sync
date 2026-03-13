@@ -4,6 +4,21 @@
     "pua": {
       "url": "https://github.com/tanweai/pua/tree/main/skills/pua",
       "installedCommit": "ac015ceb0e8511e8df65f640176417a8d35553d0"
+    },
+    "canvas-design": {
+      "url": "https://github.com/anthropics/skills/tree/main/skills/canvas-design"
+    },
+    "doc-coauthoring": {
+      "url": "https://github.com/anthropics/skills/tree/main/skills/doc-coauthoring"
+    },
+    "docx": {
+      "url": "https://github.com/anthropics/skills/tree/main/skills/docx"
+    },
+    "frontend-design": {
+      "url": "https://github.com/anthropics/skills/tree/main/skills/frontend-design"
+    },
+    "pdf": {
+      "url": "https://github.com/anthropics/skills/tree/main/skills/pdf"
     }
   }
 }

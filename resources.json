@@ -5,7 +5,85 @@
       "pua": {
         "windows": [
           "claude",
-          "codex"
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "taskmaster": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "web-artifacts-builder": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "webapp-testing": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "wh-drg-mysql": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "xlsx": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
         ]
       }
     },
