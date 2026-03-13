@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -37,7 +38,10 @@ RESOURCE_ROWS_PER_PAGE = 10
 NAME_CELL_PREVIEW_CHARS = 90
 ROW_HEIGHT_DEFAULT = 42
 ROW_HEIGHT_WITH_DESCRIPTION = 58
+ROW_HEIGHT_CHILD = 36
 ENVIRONMENT_IDS = ("windows", "wsl")
+_ITEM_RESOURCE = "resource"
+_ITEM_CHILD = "child"
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -73,6 +77,50 @@ def _build_name_cell(name: str, description: str, tooltip: str) -> QWidget:
     return container
 
 
+def _build_expandable_name_cell(
+    name: str,
+    description: str,
+    tooltip: str,
+    expanded: bool,
+    children_count: int,
+    on_toggle,
+) -> QWidget:
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 2, 0, 2)
+    layout.setSpacing(2)
+    top_row = QHBoxLayout()
+    top_row.setSpacing(4)
+    top_row.setContentsMargins(0, 0, 0, 0)
+    toggle = QPushButton("\u25bc" if expanded else "\u25b6")
+    toggle.setFixedSize(20, 20)
+    toggle.setStyleSheet(
+        "QPushButton { border: none; background: transparent;"
+        " font-size: 10px; color: #6b7280; }"
+        "QPushButton:hover { color: #f97316; }"
+    )
+    toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+    toggle.clicked.connect(on_toggle)
+    top_row.addWidget(toggle)
+    name_label = QLabel(name)
+    name_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+    top_row.addWidget(name_label, 1)
+    count_label = QLabel(f"({children_count})")
+    count_label.setObjectName("muted")
+    count_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+    top_row.addWidget(count_label)
+    layout.addLayout(top_row)
+    if description.strip():
+        desc_label = QLabel(_truncate(description, NAME_CELL_PREVIEW_CHARS))
+        desc_label.setObjectName("muted")
+        desc_label.setWordWrap(False)
+        desc_label.setContentsMargins(24, 0, 0, 0)
+        desc_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        layout.addWidget(desc_label)
+    container.setToolTip(tooltip or name)
+    return container
+
+
 class ResourcePage(QWidget):
     rescan_requested = Signal(str)
     sync_requested = Signal(str, object)
@@ -87,11 +135,13 @@ class ResourcePage(QWidget):
         self._page_index = 0
         self._page_size = RESOURCE_ROWS_PER_PAGE
         self._visible_rows: list[dict[str, object]] = []
+        self._expanded_names: set[str] = set()
+        self._display_items: list[dict[str, object]] = []
         self._build_ui()
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         title = "Skills" if self.kind == "skills" else "Commands"
         layout.addWidget(self._build_toolbar_card())
         layout.addWidget(self._build_table_card(title), 1)
@@ -99,16 +149,16 @@ class ResourcePage(QWidget):
         card = CardFrame()
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
         grid.setColumnStretch(0, 1)
         self.search = QLineEdit()
         self.search.setPlaceholderText(f"搜索 {self.kind} 名称或路径")
         self.search.textChanged.connect(self._handle_filter_changed)
-        self.rescan_button = ActionButton("重扫源目录", "secondary")
-        self.sync_button = ActionButton("同步勾选项", "secondary")
-        self.upgrade_button = ActionButton("升级所有", "secondary")
-        self.remove_button = ActionButton("撤销勾选项", "danger")
+        self.rescan_button = ActionButton("重新扫描", "secondary")
+        self.sync_button = ActionButton("同步选中", "secondary")
+        self.upgrade_button = ActionButton("全部升级", "secondary")
+        self.remove_button = ActionButton("移除选中", "danger")
         self.rescan_button.clicked.connect(lambda: self.rescan_requested.emit(self.kind))
         self.sync_button.clicked.connect(self._emit_sync)
         self.upgrade_button.clicked.connect(self._emit_upgrade_all)
@@ -124,7 +174,7 @@ class ResourcePage(QWidget):
         card.body_layout.addLayout(grid)
         return card
     def _build_table_card(self, title: str) -> QWidget:
-        card = CardFrame(f"{title} 清单", "按状态、路径和工具分配检查当前资源。")
+        card = CardFrame(f"{title} 列表", "查看资源状态和工具分配。")
         self.table = FrozenRightTableWidget(0, len(TABLE_HEADERS), tuple(range(3, len(TABLE_HEADERS))), MATRIX_GROUPS)
         self.table.setHorizontalHeaderLabels(TABLE_HEADERS)
         configure_table(self.table, stretch_columns=(1,))
@@ -137,7 +187,7 @@ class ResourcePage(QWidget):
         self.table.viewport().installEventFilter(self._table_wheel_blocker)
         frozen_view.viewport().installEventFilter(self._table_wheel_blocker)
         header = self.table.horizontalHeader()
-        fixed_columns = {0: 56, 2: 80}
+        fixed_columns = {0: 48, 2: 72}
         for column, width in fixed_columns.items():
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(column, width)
@@ -146,8 +196,8 @@ class ResourcePage(QWidget):
         for column in range(3, len(TABLE_HEADERS)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             matrix_header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-            self.table.setColumnWidth(column, 78)
-            frozen_view.setColumnWidth(column, 78)
+            self.table.setColumnWidth(column, 68)
+            frozen_view.setColumnWidth(column, 68)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         frozen_view.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -161,7 +211,7 @@ class ResourcePage(QWidget):
                 elif column <= MATRIX_END_COLUMN:
                     item.setToolTip(MATRIX_COLUMNS[column - 3][3])
                 else:
-                    item.setToolTip("操作：仅在 copy 模式下，当源更新于目标时可执行“升级”。")
+                    item.setToolTip("操作：copy 模式下，源比目标新时可升级。")
         self._logo_delegate = ToolLogoDelegate(self.table)
         for column in range(3, MATRIX_END_COLUMN + 1):
             self.table.setItemDelegateForColumn(column, self._logo_delegate)
@@ -172,6 +222,7 @@ class ResourcePage(QWidget):
         self.pager = Pager()
         self.pager.page_requested.connect(self._set_page)
         card.body_layout.addWidget(self.pager)
+        card.body_layout.setSpacing(8)
         card.body_layout.addWidget(self.table, 1)
         return card
 
@@ -226,7 +277,9 @@ class ResourcePage(QWidget):
             for row in rows
             if self._has_assignments(row["effectiveTargets"])
         }
-        self.selected_names &= {row["name"] for row in rows}
+        existing_names = {row["name"] for row in rows}
+        self.selected_names &= existing_names
+        self._expanded_names &= existing_names
         self._rebuild_table()
 
     def get_assignments(self) -> dict[str, dict[str, list[str]]]:
@@ -254,11 +307,15 @@ class ResourcePage(QWidget):
         rows = self._filtered_rows()
         self.pager.set_stats(self._count_installed(rows))
         self._visible_rows, self._page_index, page_count, total = paginate(rows, self._page_index, self._page_size)
+        self._display_items = self._build_display_items()
         self._updating_table = True
         self.table.blockSignals(True)
-        self.table.setRowCount(len(self._visible_rows))
-        for row_index, row in enumerate(self._visible_rows):
-            self._fill_row(row_index, row)
+        self.table.setRowCount(len(self._display_items))
+        for row_index, display_item in enumerate(self._display_items):
+            if display_item["type"] == _ITEM_RESOURCE:
+                self._fill_row(row_index, display_item["row"])
+            else:
+                self._fill_child_row(row_index, display_item)
         self.table.blockSignals(False)
         self._updating_table = False
         self.table.sync_frozen_view()
@@ -279,7 +336,7 @@ class ResourcePage(QWidget):
         return stats
 
     def _update_meta(self) -> None:
-        self.meta.setText(f"{len(self.rows)} 条记录 · 已勾选 {len(self.selected_names)} 项")
+        self.meta.setText(f"{len(self.rows)} 条 · 已选 {len(self.selected_names)} 项")
 
     def _fill_row(self, row_index: int, row: dict[str, object]) -> None:
         self._set_select_cell(row_index, row["name"])
@@ -298,7 +355,7 @@ class ResourcePage(QWidget):
         upgrade_item = QTableWidgetItem("升级" if self._is_upgradeable_row(row) else "")
         upgrade_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         upgrade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        upgrade_item.setToolTip("点击升级：仅同步“目标缺失/源更新于目标”的条目，跳过覆盖风险项。")
+        upgrade_item.setToolTip("升级：同步缺失或有新版本的条目，跳过目标比源新的条目。")
         self.table.setItem(row_index, ACTION_COLUMN, upgrade_item)
         self._sync_row_height(row_index, row.get("description", ""))
 
@@ -307,7 +364,7 @@ class ResourcePage(QWidget):
         checkbox.setChecked(name in self.selected_names)
         checkbox.stateChanged.connect(lambda state, item=name: self._toggle_selected(item, state))
         wrapper = QWidget()
-        wrapper.setToolTip("勾选后参与“同步勾选项 / 撤销勾选项”")
+        wrapper.setToolTip("勾选后可执行「同步选中 / 移除选中」")
         layout = QHBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -319,11 +376,66 @@ class ResourcePage(QWidget):
         description = str(row.get("description", ""))
         path = str(row.get("path", ""))
         tooltip = _build_name_tooltip(description, path)
-        self.table.setCellWidget(row_index, 1, _build_name_cell(name, description, tooltip))
+        children = row.get("children", [])
+        if children:
+            expanded = name in self._expanded_names
+            cell = _build_expandable_name_cell(
+                name, description, tooltip, expanded, len(children),
+                lambda _=False, n=name: self._toggle_expanded(n),
+            )
+        else:
+            cell = _build_name_cell(name, description, tooltip)
+        self.table.setCellWidget(row_index, 1, cell)
 
     def _sync_row_height(self, row_index: int, description: str) -> None:
         height = ROW_HEIGHT_WITH_DESCRIPTION if description.strip() else ROW_HEIGHT_DEFAULT
         self.table.setRowHeight(row_index, height)
+
+    def _toggle_expanded(self, name: str) -> None:
+        if name in self._expanded_names:
+            self._expanded_names.discard(name)
+        else:
+            self._expanded_names.add(name)
+        self._rebuild_table()
+
+    def _build_display_items(self) -> list[dict[str, object]]:
+        items: list[dict[str, object]] = []
+        for row in self._visible_rows:
+            items.append({"type": _ITEM_RESOURCE, "row": row})
+            children = row.get("children", [])
+            if children and row["name"] in self._expanded_names:
+                for child in children:
+                    items.append({
+                        "type": _ITEM_CHILD,
+                        "childName": child,
+                        "parentRow": row,
+                    })
+        return items
+
+    def _fill_child_row(self, row_index: int, display_item: dict[str, object]) -> None:
+        self.table.setCellWidget(row_index, 0, QWidget())
+        child_name = str(display_item["childName"])
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(28, 0, 0, 0)
+        layout.setSpacing(0)
+        label = QLabel(child_name)
+        label.setObjectName("muted")
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        layout.addWidget(label)
+        container.setToolTip(child_name)
+        self.table.setCellWidget(row_index, 1, container)
+        type_item = QTableWidgetItem("")
+        type_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        self.table.setItem(row_index, 2, type_item)
+        for offset in range(len(MATRIX_COLUMNS)):
+            cell = QTableWidgetItem()
+            cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.table.setItem(row_index, offset + 3, cell)
+        action_item = QTableWidgetItem("")
+        action_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        self.table.setItem(row_index, ACTION_COLUMN, action_item)
+        self.table.setRowHeight(row_index, ROW_HEIGHT_CHILD)
 
     def _toggle_selected(self, name: str, state: int) -> None:
         if state == Qt.CheckState.Checked.value:
@@ -379,15 +491,17 @@ class ResourcePage(QWidget):
     def _handle_matrix_clicked(self, index: QModelIndex) -> None:
         if self._updating_table:
             return
+        row = index.row()
+        if row >= len(self._display_items):
+            return
+        if self._display_items[row]["type"] != _ITEM_RESOURCE:
+            return
         if is_action_cell(index):
             self._handle_upgrade_clicked(index)
             return
         if not is_matrix_cell(index):
             return
-        row = index.row()
-        if row >= len(self._visible_rows):
-            return
-        resource = self._visible_rows[row]
+        resource = self._display_items[row]["row"]
         environment_id, tool_id, _label, _tooltip = MATRIX_COLUMNS[index.column() - 3]
         name = resource["name"]
         active = tool_id in self.assignments.get(name, {}).get(environment_id, [])
@@ -399,9 +513,11 @@ class ResourcePage(QWidget):
 
     def _handle_upgrade_clicked(self, index: QModelIndex) -> None:
         row = index.row()
-        if row >= len(self._visible_rows):
+        if row >= len(self._display_items):
             return
-        resource = self._visible_rows[row]
+        if self._display_items[row]["type"] != _ITEM_RESOURCE:
+            return
+        resource = self._display_items[row]["row"]
         if not self._is_upgradeable_row(resource):
             return
         name = resource["name"]

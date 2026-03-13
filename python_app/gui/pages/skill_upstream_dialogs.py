@@ -17,13 +17,13 @@ _DIALOG_MIN_HEIGHT = 220
 class AddSkillFromUrlDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("新增线上 Skill")
+        self.setWindowTitle("新增 Skill")
         self.setModal(True)
         self.setMinimumSize(_DIALOG_MIN_WIDTH, _DIALOG_MIN_HEIGHT)
         self.name_input = QLineEdit()
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path>")
-        self._hint = QLabel("提示：URL 可填 skills 父目录或具体 skill 目录，程序会按 Skill 名称自动匹配。")
+        self._hint = QLabel("URL 可填 skills 父目录或具体 skill 目录，会按名称自动匹配。")
         self._hint.setObjectName("muted")
         self._hint.setWordWrap(True)
         self._hint.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -52,7 +52,7 @@ class SetSkillUrlDialog(QDialog):
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path>")
         self._hint = QLabel(
-            "会按 Skill 名称自动拼接子路径，例如填入 .../tree/main/skills，docx/pdf 会分别绑定到 .../skills/docx 与 .../skills/pdf。"
+            "按名称自动拼接子路径。例如填 .../tree/main/skills，docx 和 pdf 会分别绑定到 .../skills/docx 和 .../skills/pdf。"
         )
         self._hint.setObjectName("muted")
         self._hint.setWordWrap(True)

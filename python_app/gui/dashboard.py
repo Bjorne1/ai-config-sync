@@ -5,10 +5,10 @@ from ..core.resource_operations import detect_existing_targets, merge_environmen
 STATE_LABELS = {
     "healthy": "已同步",
     "missing": "目标缺失",
-    "outdated": "可升级",
-    "ahead": "覆盖风险",
-    "conflict": "存在冲突",
-    "source_missing": "源不存在",
+    "outdated": "有新版本",
+    "ahead": "目标比源新",
+    "conflict": "冲突",
+    "source_missing": "源已删除",
     "tool_unavailable": "工具未安装",
     "environment_error": "环境异常",
     "partial": "部分完成",
@@ -50,10 +50,10 @@ def summarize_entries(
 ) -> tuple[str, str]:
     if not _has_assignments(configured_targets):
         if _has_assignments(detected_targets):
-            return "idle", "已检测到目标"
+            return "idle", "已检测到目标路径"
         return "idle", STATE_LABELS["idle"]
     if not entries:
-        return "partial", "已分配但尚无状态明细"
+        return "partial", "已分配，等待同步"
     ordered = sorted(entries, key=lambda entry: STATE_PRIORITY[entry["state"]])
     summary = ordered[0]
     message = summary.get("message") or STATE_LABELS[summary["state"]]
@@ -99,6 +99,7 @@ def build_resource_rows(
                 "path": (scanned or status or {}).get("path") or (status or {}).get("sourcePath") or "",
                 "isDirectory": (scanned or status or {}).get("isDirectory", False),
                 "childrenCount": _children_count(scanned),
+                "children": (scanned or {}).get("children", []),
                 "scanned": bool(scanned),
                 "description": (scanned or {}).get("description", "") if scanned else "",
                 "descriptionSource": (scanned or {}).get("descriptionSource", "") if scanned else "",
@@ -149,14 +150,14 @@ def summarize_sync(details: list[dict[str, object]]) -> str:
     success = sum(1 for item in details if item.get("success"))
     skipped = sum(1 for item in details if item.get("skipped"))
     failed = len(details) - success - skipped
-    return f"成功 {success} / 跳过 {skipped} / 失败 {failed}"
+    return f"成功 {success} · 跳过 {skipped} · 失败 {failed}"
 
 
 def summarize_cleanup(details: list[dict[str, object]]) -> str:
     if not details:
-        return "没有需要清理的目标"
+        return "没有需要清理的条目"
     success = sum(1 for item in details if item.get("success"))
-    return f"已处理 {len(details)} 条，成功 {success} 条"
+    return f"已处理 {len(details)} 条 · 成功 {success} 条"
 
 
 def count_configured(assignments: dict[str, dict[str, list[str]]]) -> int:
@@ -175,18 +176,18 @@ def overview_stats(snapshot: dict[str, object], issue_count: int, cleanup_candid
     managed_skills = count_configured(snapshot["config"]["resources"]["skills"])
     managed_commands = count_configured(snapshot["config"]["resources"]["commands"])
     enabled_targets = 8 if has_wsl_assignments(snapshot["config"]["resources"]) else 4
-    mode_label = "复制模式" if snapshot["config"]["syncMode"] == "copy" else "符号链接模式"
+    mode_label = "复制模式" if snapshot["config"]["syncMode"] == "copy" else "链接模式"
     return [
-        {"label": "已纳管 Skills", "value": str(managed_skills), "note": f"{len(snapshot['inventory']['skills'])} 个源项"},
-        {"label": "已纳管 Commands", "value": str(managed_commands), "note": f"{len(snapshot['inventory']['commands'])} 个源项"},
-        {"label": "目标通道", "value": str(enabled_targets), "note": mode_label},
-        {"label": "异常条目", "value": str(issue_count), "note": f"{cleanup_candidates} 条可清理"},
+        {"label": "已配置 Skills", "value": str(managed_skills), "note": f"共 {len(snapshot['inventory']['skills'])} 个源"},
+        {"label": "已配置 Commands", "value": str(managed_commands), "note": f"共 {len(snapshot['inventory']['commands'])} 个源"},
+        {"label": "同步目标", "value": str(enabled_targets), "note": mode_label},
+        {"label": "待处理", "value": str(issue_count), "note": f"{cleanup_candidates} 条可清理"},
     ]
 
 
 def entry_summary(entries: list[dict[str, object]]) -> str:
     if not entries:
-        return "等待状态回填"
+        return "等待加载"
     return " | ".join(
         f"{entry['environmentId']}/{entry['toolId']}: {STATE_LABELS.get(entry['state'], entry['state'])}"
         for entry in entries

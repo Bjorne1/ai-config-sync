@@ -1,7 +1,9 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
@@ -16,15 +18,31 @@ from PySide6.QtWidgets import (
 )
 
 from .header_views import GroupedHeaderView
-from .theme import STATE_COLORS, create_mono_font
+from .theme import ACCENT, BORDER, STATE_COLORS, SURFACE, create_mono_font
+
+
+# 阴影参数
+_SHADOW_BLUR_RADIUS = 18
+_SHADOW_Y_OFFSET = 3
+_SHADOW_COLOR = QColor(0, 0, 0, 25)
+
+
+def _apply_card_shadow(widget: QWidget) -> None:
+    """为卡片添加微弱投影效果"""
+    shadow = QGraphicsDropShadowEffect(widget)
+    shadow.setBlurRadius(_SHADOW_BLUR_RADIUS)
+    shadow.setOffset(0, _SHADOW_Y_OFFSET)
+    shadow.setColor(_SHADOW_COLOR)
+    widget.setGraphicsEffect(shadow)
 
 
 class CardFrame(QFrame):
     def __init__(self, title: str = "", detail: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("card")
+        _apply_card_shadow(self)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(10)
         self._header = QLabel(title)
         self._header.setObjectName("sectionTitle")
@@ -41,27 +59,51 @@ class CardFrame(QFrame):
 
 
 class MetricCard(QFrame):
+    _STYLE_NORMAL = (
+        f"QFrame#metricCard {{ background: {SURFACE};"
+        f" border: 1px solid rgba(184, 196, 209, 0.4);"
+        f" border-bottom: 2px solid rgba(184, 196, 209, 0.25);"
+        f" border-radius: 8px; }}"
+    )
+    _STYLE_HOVER = (
+        f"QFrame#metricCard {{ background: {SURFACE};"
+        f" border: 1px solid {ACCENT};"
+        f" border-bottom: 2px solid {ACCENT};"
+        f" border-radius: 8px; }}"
+    )
+
     def __init__(self, label: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("metricCard")
-        self.setMinimumHeight(152)
+        self.setMinimumHeight(140)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        _apply_card_shadow(self)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(4)
         self.label = QLabel(label)
         self.label.setObjectName("eyebrow")
         self.value = QLabel("--")
-        self.value.setFont(create_mono_font(24))
+        self.value.setFont(create_mono_font(28))
         self.note = QLabel("")
         self.note.setObjectName("muted")
         self.note.setWordWrap(True)
         layout.addWidget(self.label)
+        layout.addSpacing(4)
         layout.addWidget(self.value)
+        layout.addSpacing(2)
         layout.addWidget(self.note)
 
     def set_value(self, value: str, note: str) -> None:
         self.value.setText(value)
         self.note.setText(note)
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.HoverEnter:
+            self.setStyleSheet(self._STYLE_HOVER)
+        elif event.type() == QEvent.Type.HoverLeave:
+            self.setStyleSheet(self._STYLE_NORMAL)
+        return super().event(event)
 
 
 class BadgeLabel(QLabel):
@@ -74,7 +116,8 @@ class BadgeLabel(QLabel):
     def set_state(self, state: str) -> None:
         fg, bg = STATE_COLORS.get(state, STATE_COLORS["idle"])
         self.setStyleSheet(
-            f"border: 1px solid {fg}; border-radius: 10px; padding: 4px 8px; color: {fg}; background: {bg};"
+            f"border: 1px solid {fg}; border-radius: 8px;"
+            f" padding: 3px 10px; color: {fg}; background: {bg};"
         )
 
 

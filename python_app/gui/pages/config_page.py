@@ -1,11 +1,12 @@
 from copy import deepcopy
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QVBoxLayout,
@@ -31,7 +32,7 @@ class ConfigPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(18)
         layout.addWidget(self._build_top_cards())
         layout.addWidget(self._build_target_stack())
         layout.addWidget(self._build_support_card())
@@ -43,7 +44,7 @@ class ConfigPage(QWidget):
     def _build_top_cards(self) -> QWidget:
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(12)
+        grid.setSpacing(16)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         grid.addWidget(self._build_base_card(), 0, 0)
@@ -51,9 +52,11 @@ class ConfigPage(QWidget):
         return layout_container(grid)
 
     def _build_base_card(self) -> QWidget:
-        card = CardFrame("同步模式与源目录", "先定义全局模式，再指定 Skills 与 Commands 的源目录。")
+        card = CardFrame("同步模式与源目录", "设置全局同步模式和 Skills / Commands 源目录。")
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.sync_mode = QComboBox()
         self.sync_mode.addItems(("symlink", "copy"))
         self.skills_source = QLineEdit()
@@ -62,21 +65,28 @@ class ConfigPage(QWidget):
         form.addRow("Skills Source", self.skills_source)
         form.addRow("Commands Source", self.commands_source)
         card.body_layout.addLayout(form)
-        self.reload_button = ActionButton("重载 WSL 列表", "secondary")
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 6, 0, 0)
+        button_row.setSpacing(12)
+        self.reload_button = ActionButton("刷新 WSL", "secondary")
         self.save_button = ActionButton("保存配置", "primary")
         self.reload_button.clicked.connect(self.reload_requested.emit)
         self.save_button.clicked.connect(lambda: self.save_requested.emit(self.get_patch()))
-        card.body_layout.addWidget(self.reload_button)
-        card.body_layout.addWidget(self.save_button)
+        button_row.addStretch(1)
+        button_row.addWidget(self.reload_button)
+        button_row.addWidget(self.save_button)
+        card.body_layout.addLayout(button_row)
         self._connect_dirty_signals([self.sync_mode, self.skills_source, self.commands_source])
         return card
 
     def _build_environment_card(self) -> QWidget:
-        card = CardFrame("WSL 运行时", "自动探测发行版；是否参与同步由 Skills / Commands 页面的 WSL 勾选决定。")
+        card = CardFrame("WSL 运行时", "自动检测发行版，WSL 同步开关在 Skills / Commands 页面设置。")
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.wsl_distro = QComboBox()
-        self.wsl_home = QLabel("未解析")
+        self.wsl_home = QLabel("未检测")
         self.wsl_home.setObjectName("muted")
         self.wsl_error = QLabel("")
         self.wsl_error.setObjectName("muted")
@@ -91,18 +101,18 @@ class ConfigPage(QWidget):
     def _build_target_stack(self) -> QWidget:
         stack = QVBoxLayout()
         stack.setContentsMargins(0, 0, 0, 0)
-        stack.setSpacing(12)
-        stack.addWidget(self._build_target_matrix_card("windows", "Windows 目标矩阵"))
-        stack.addWidget(self._build_target_matrix_card("wsl", "WSL 目标矩阵"))
+        stack.setSpacing(16)
+        stack.addWidget(self._build_target_matrix_card("windows", "Windows 目标路径"))
+        stack.addWidget(self._build_target_matrix_card("wsl", "WSL 目标路径"))
         return layout_container(stack)
 
     def _build_target_matrix_card(self, environment_id: str, title: str) -> QWidget:
-        detail = "同一环境下按 Skills / Commands 并排展示，避免半宽卡片压缩输入框。"
+        detail = "Skills / Commands 按工具分别配置目标路径。"
         card = CardFrame(title, detail)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(12)
         self._add_target_group(grid, environment_id, "skills", 0)
         self._add_target_group(grid, environment_id, "commands", 2)
         grid.setColumnStretch(1, 1)
@@ -117,7 +127,7 @@ class ConfigPage(QWidget):
         for row, tool_id in enumerate(TOOL_IDS, start=1):
             label = QLabel(tool_id.upper())
             label.setObjectName("formLabel")
-            label.setMinimumWidth(92)
+            label.setFixedWidth(100)
             editor = QLineEdit()
             self._targets[(environment_id, kind, tool_id)] = editor
             editor.textChanged.connect(self._refresh_dirty)
@@ -125,16 +135,16 @@ class ConfigPage(QWidget):
             grid.addWidget(editor, row, column + 1)
 
     def _build_support_card(self) -> QWidget:
-        card = CardFrame("Command Folder Support", "控制命令目录是否保留上层目录结构。")
-        self.default_support = QCheckBox("默认保留目录")
+        card = CardFrame("命令目录结构", "控制 Commands 同步时是否保留上层目录结构。")
+        self.default_support = QCheckBox("默认保留目录结构")
         self.default_support.stateChanged.connect(self._refresh_dirty)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(12)
         grid.addWidget(self.default_support, 0, 0, 1, 2)
         for tool_id in TOOL_IDS:
-            checkbox = QCheckBox(f"{tool_id} 保留目录")
+            checkbox = QCheckBox(f"{tool_id} 保留目录结构")
             checkbox.stateChanged.connect(self._refresh_dirty)
             self._tool_support[tool_id] = checkbox
         for index, (tool_id, checkbox) in enumerate(self._tool_support.items(), start=1):
@@ -163,7 +173,7 @@ class ConfigPage(QWidget):
         self.wsl_distro.addItems(wsl_runtime["distros"])
         self.wsl_distro.setCurrentText(wsl_runtime["selectedDistro"] or config["environments"]["wsl"]["selectedDistro"] or "")
         self.wsl_distro.blockSignals(False)
-        self.wsl_home.setText(wsl_runtime["homeDir"] or "未解析")
+        self.wsl_home.setText(wsl_runtime["homeDir"] or "未检测")
         self.wsl_error.setText(wsl_runtime["error"] or "")
         self._fill_targets(config)
         self.default_support.setChecked(config["commandSubfolderSupport"]["default"])
@@ -230,4 +240,4 @@ class ConfigPage(QWidget):
             self.dirty_label.setText("")
             return
         dirty = serialize(self.get_patch()) != serialize(self._original_patch)
-        self.dirty_label.setText("存在未保存配置改动。" if dirty else "配置已同步。")
+        self.dirty_label.setText("有未保存的修改" if dirty else "配置已保存")

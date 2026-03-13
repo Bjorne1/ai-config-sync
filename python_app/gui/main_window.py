@@ -19,13 +19,12 @@ from .pages.config_page import ConfigPage
 from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
 from .pages.skill_upstream_page import SkillUpstreamPage
-from .pages.status_page import StatusPage
 from .pages.tools_page import ToolsPage
 from .theme import build_stylesheet
 from .widgets import NavButton
 
-PAGE_KEYS = ("overview", "skills", "skillUpstreams", "commands", "status", "config", "cleanup", "tools")
-PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "状态", "配置", "清理", "工具更新")
+PAGE_KEYS = ("overview", "skills", "skillUpstreams", "commands", "config", "cleanup", "tools")
+PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "配置", "清理", "工具更新")
 
 
 class MainWindow(QMainWindow):
@@ -74,30 +73,37 @@ class MainWindow(QMainWindow):
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(248)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(18, 20, 18, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(14, 18, 14, 18)
+        layout.setSpacing(0)
         hero = QFrame()
         hero.setObjectName("sidebarHero")
         hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(16, 16, 16, 16)
-        hero_layout.setSpacing(8)
+        hero_layout.setContentsMargins(16, 18, 16, 18)
+        hero_layout.setSpacing(6)
         title = QLabel("Boss Console\nRenderer")
         title.setObjectName("sidebarTitle")
         title.setWordWrap(True)
-        intro = QLabel("Industrial grey + safety orange.\n高密度视图，不牺牲可读性。")
+        intro = QLabel("工业灰 + 安全橙\n紧凑布局，清晰易读。")
         intro.setObjectName("sidebarIntro")
         intro.setWordWrap(True)
         hero_layout.addWidget(title)
         hero_layout.addWidget(intro)
         layout.addWidget(hero)
+        layout.addSpacing(16)
         section_label = QLabel("Navigation")
         section_label.setObjectName("sidebarSectionLabel")
         layout.addWidget(section_label)
+        layout.addSpacing(8)
+        # 导航按钮分组: 主功能 / 资源管理 / 系统
+        NAV_GROUP_BREAKS = {"config", "cleanup"}
         self.nav_buttons: dict[str, NavButton] = {}
         for key, label in zip(PAGE_KEYS, PAGE_LABELS, strict=True):
+            if key in NAV_GROUP_BREAKS:
+                layout.addSpacing(12)
             button = NavButton(label)
             button.clicked.connect(lambda _=False, page_key=key: self.set_current_page(page_key))
             layout.addWidget(button)
+            layout.addSpacing(4)
             self.nav_buttons[key] = button
         layout.addStretch(1)
         return sidebar
@@ -135,7 +141,6 @@ class MainWindow(QMainWindow):
         self.skills_page = ResourcePage("skills")
         self.skill_upstream_page = SkillUpstreamPage()
         self.commands_page = ResourcePage("commands")
-        self.status_page = StatusPage()
         self.config_page = ConfigPage()
         self.cleanup_page = CleanupPage()
         self.tools_page = ToolsPage()
@@ -144,7 +149,6 @@ class MainWindow(QMainWindow):
             self.skills_page,
             self.skill_upstream_page,
             self.commands_page,
-            self.status_page,
             self.config_page,
             self.cleanup_page,
             self.tools_page,
@@ -177,7 +181,7 @@ class MainWindow(QMainWindow):
         self._update_workspace_scroll_policy(key)
 
     def _update_workspace_scroll_policy(self, key: str) -> None:
-        scrollable_pages = {"status", "config"}
+        scrollable_pages = {"overview", "config"}
         enabled = key in scrollable_pages
         policy = Qt.ScrollBarPolicy.ScrollBarAsNeeded if enabled else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         self.workspace_scroll.setVerticalScrollBarPolicy(policy)
@@ -250,14 +254,16 @@ class MainWindow(QMainWindow):
         cleanup_candidates = count_cleanup_candidates(issues)
         stats = overview_stats(self.snapshot, len(issues), cleanup_candidates)
         latest_log = self.logs[0] if self.logs else None
-        self.overview_page.set_context(stats, self.snapshot, latest_log, self.last_sync_summary, len(issues))
+        self.overview_page.set_context(
+            stats, self.snapshot, latest_log, self.last_sync_summary, len(issues),
+            self.snapshot["status"]["environments"], issues, self.logs,
+        )
         self.skills_page.set_rows(self._resource_rows("skills"))
         self.skill_upstream_page.set_context(
             self.snapshot["inventory"]["skills"],
             self.snapshot.get("skillUpstreams", {}),
         )
         self.commands_page.set_rows(self._resource_rows("commands"))
-        self.status_page.set_context(self.snapshot["status"]["environments"], issues, self.logs, self.last_sync_summary)
         self.config_page.set_context(self.snapshot["config"], self.snapshot["wslRuntime"])
         self.cleanup_page.set_context(cleanup_candidates, self.cleanup_result)
         self.tools_page.set_context(

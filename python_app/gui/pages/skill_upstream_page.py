@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QTableWidget,
@@ -43,24 +44,24 @@ class SkillUpstreamPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.addWidget(self._build_toolbar_card())
         layout.addWidget(self._build_table_card(), 1)
 
     def _build_toolbar_card(self) -> QWidget:
-        card = CardFrame("Skills 上游更新", "为单个/批量 Skill 绑定 GitHub URL，并检查/下载更新。")
+        card = CardFrame("Skills 上游更新", "为 Skill 绑定 GitHub URL，检查和下载更新。")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
         grid.setColumnStretch(0, 1)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索 skill 名称/路径/URL")
         self.search.textChanged.connect(self._handle_filter_changed)
-        self.select_all = QCheckBox("全选（当前筛选）")
+        self.select_all = QCheckBox("全选当前页")
         self.select_all.stateChanged.connect(self._toggle_select_all)
-        self.add_button = ActionButton("新增线上 Skill", "secondary")
-        self.set_url_button = ActionButton("批量设置 URL", "secondary")
+        self.add_button = ActionButton("新增 Skill", "secondary")
+        self.set_url_button = ActionButton("设置 URL", "secondary")
         self.check_button = ActionButton("检查更新", "secondary")
         self.upgrade_button = ActionButton("下载更新", "primary")
         self.add_button.clicked.connect(self._open_add_dialog)
@@ -84,16 +85,26 @@ class SkillUpstreamPage(QWidget):
         self._refresh_table()
 
     def _build_table_card(self) -> QWidget:
-        card = CardFrame("上游清单", "配置 URL 后可检查最新 commit，并一键覆盖本地 skill 目录。")
+        card = CardFrame("上游列表", "配置 URL 后可检查远程更新，一键下载到本地。")
         self.pager = Pager(show_stats=False)
         self.pager.page_requested.connect(self._set_page)
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(("选择", "名称", "URL", "已安装", "最新", "状态"))
+        self.table.setHorizontalHeaderLabels(("选择", "名称", "URL", "本地版本", "远程版本", "状态"))
         configure_table(self.table, stretch_columns=(1, 2))
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(0, 48)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(3, 90)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(4, 90)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(5, 100)
+        card.body_layout.setSpacing(8)
         card.body_layout.addWidget(self.pager)
         card.body_layout.addWidget(self.table)
         return card
@@ -148,18 +159,23 @@ class SkillUpstreamPage(QWidget):
 
     def _append_row(self, row: dict[str, object]) -> None:
         name = str(row.get("name") or "")
-        url = str(row.get("url") or "").strip() or "（未配置）"
-        installed = str(row.get("installedCommit") or "").strip() or "n/a"
+        url = str(row.get("url") or "").strip() or "未配置"
+        installed = str(row.get("installedCommit") or "").strip() or "—"
         update = self._update_results.get(name, {})
-        latest = str(update.get("latestCommit") or "").strip() or "n/a"
-        status = str(update.get("message") or ("未配置 URL" if url == "（未配置）" else "未检查"))
+        latest = str(update.get("latestCommit") or "").strip() or "—"
+        status = str(update.get("message") or ("未配置 URL" if url == "未配置" else "未检查"))
         index = self.table.rowCount()
         self.table.insertRow(index)
 
         checkbox = QCheckBox()
         checkbox.setChecked(name in self._selected)
         checkbox.stateChanged.connect(lambda _state, skill=name: self._toggle_selected(skill))
-        self.table.setCellWidget(index, 0, checkbox)
+        wrapper = QWidget()
+        wrapper_layout = QHBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        wrapper_layout.addWidget(checkbox)
+        self.table.setCellWidget(index, 0, wrapper)
 
         self.table.setItem(index, 1, QTableWidgetItem(name))
         url_item = QTableWidgetItem(url)
@@ -195,10 +211,11 @@ class SkillUpstreamPage(QWidget):
                 self._selected -= visible
             for row_index in range(self.table.rowCount()):
                 widget = self.table.cellWidget(row_index, 0)
-                if isinstance(widget, QCheckBox):
+                cb = widget.findChild(QCheckBox) if widget else None
+                if isinstance(cb, QCheckBox):
                     name_item = self.table.item(row_index, 1)
                     if name_item and name_item.text() in visible:
-                        widget.setChecked(checked)
+                        cb.setChecked(checked)
         finally:
             self._bulk_updating = False
         self._sync_select_all_state()
@@ -216,7 +233,7 @@ class SkillUpstreamPage(QWidget):
             self._bulk_updating = False
 
     def _update_meta(self, visible_count: int) -> None:
-        self.meta.setText(f"共 {visible_count} 条 · 已选择 {len(self._selected)} 条")
+        self.meta.setText(f"共 {visible_count} 条 · 已选 {len(self._selected)} 条")
 
     def _open_add_dialog(self) -> None:
         dialog = AddSkillFromUrlDialog(self)
@@ -224,40 +241,40 @@ class SkillUpstreamPage(QWidget):
             return
         payload = dialog.payload()
         if not payload["name"]:
-            QMessageBox.warning(self, "新增失败", "请先填写 skill 名称。")
+            QMessageBox.warning(self, "新增失败", "请填写 Skill 名称。")
             return
         if not payload["url"]:
-            QMessageBox.warning(self, "新增失败", "请先填写更新 URL。")
+            QMessageBox.warning(self, "新增失败", "请填写 URL。")
             return
         self.add_requested.emit(payload)
 
     def _open_set_url_dialog(self) -> None:
         names = self._selected_names()
         if not names:
-            QMessageBox.warning(self, "设置失败", "请先选择至少一个 skill。")
+            QMessageBox.warning(self, "设置失败", "请先选择 Skill。")
             return
-        dialog = SetSkillUrlDialog(f"批量设置 URL（{len(names)} 个）", self)
+        dialog = SetSkillUrlDialog(f"设置 URL（{len(names)} 个）", self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         url = dialog.url()
         if not url:
-            QMessageBox.warning(self, "设置失败", "请先填写更新 URL。")
+            QMessageBox.warning(self, "设置失败", "请填写 URL。")
             return
         self.set_url_requested.emit({"names": names, "url": url})
 
     def _emit_check(self) -> None:
         names = self._selected_names()
         if not names:
-            QMessageBox.warning(self, "检查失败", "请先选择至少一个 skill。")
+            QMessageBox.warning(self, "检查失败", "请先选择 Skill。")
             return
         self.check_requested.emit({"names": names})
 
     def _emit_upgrade(self) -> None:
         names = self._selected_names()
         if not names:
-            QMessageBox.warning(self, "下载失败", "请先选择至少一个 skill。")
+            QMessageBox.warning(self, "下载失败", "请先选择 Skill。")
             return
-        answer = QMessageBox.question(self, "下载更新", f"将覆盖本地目录：{len(names)} 个 skill，确认继续吗？")
+        answer = QMessageBox.question(self, "确认下载", f"将覆盖 {len(names)} 个 Skill 的本地目录，继续吗？")
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.upgrade_requested.emit({"names": names})

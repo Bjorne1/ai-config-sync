@@ -57,13 +57,15 @@ class PageSelection:
             self._selected_names |= set(names)
         else:
             self._selected_names -= set(names)
-        for row_index, name in enumerate(names):
+        for row_index in range(self._table.rowCount()):
             wrapper = self._table.cellWidget(row_index, 0)
-            checkbox = wrapper.findChild(QCheckBox) if wrapper else None
+            if not wrapper:
+                continue
+            checkbox = wrapper.findChild(QCheckBox)
             if checkbox is None:
                 continue
             checkbox.blockSignals(True)
-            checkbox.setChecked(name in self._selected_names)
+            checkbox.setChecked(checked)
             checkbox.blockSignals(False)
         self.update_header_state()
         self._on_changed()

@@ -47,7 +47,7 @@ class UpdateToolDefinitionDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(14)
         form.addRow("名称", self.name_input)
         form.addRow("类型", self.type_input)
         form.addRow("包名 / 命令", self.value_input)
@@ -70,8 +70,8 @@ class ToolsPage(QWidget):
     update_tool_requested = Signal(str)
     definitions_save_requested = Signal(object)
 
-    _PAGE_SPACING = 12
-    _CARD_SPACING = 16
+    _PAGE_SPACING = 18
+    _CARD_SPACING = 18
     _TABLE_HEIGHT_BUFFER = 8
     _MAX_VISIBLE_RESULT_ROWS = 6
     _MIN_VISIBLE_DEFINITION_ROWS = 6
@@ -95,11 +95,11 @@ class ToolsPage(QWidget):
         layout.addStretch(1)
 
     def _build_action_card(self) -> QWidget:
-        self.action_card = CardFrame("更新入口", "先确认定义，再执行一键更新。")
-        self.definition_meta = QLabel("等待配置回填。")
+        self.action_card = CardFrame("更新入口", "确认下方定义无误后，一键更新。")
+        self.definition_meta = QLabel("正在加载…")
         self.definition_meta.setObjectName("muted")
         self.definition_meta.setWordWrap(True)
-        self.run_button = ActionButton("一键更新工具", "primary")
+        self.run_button = ActionButton("一键更新", "primary")
         self.run_button.clicked.connect(self.update_requested.emit)
         self.new_button = ActionButton("新增", "secondary")
         self.new_button.clicked.connect(self._create_definition)
@@ -114,7 +114,7 @@ class ToolsPage(QWidget):
         return self.action_card
 
     def _build_definition_card(self) -> QWidget:
-        self.definition_card = CardFrame("更新定义", "支持 npm、npx 和自定义命令，可单独更新/编辑/删除。")
+        self.definition_card = CardFrame("更新定义", "支持 npm / npx / 自定义命令，可单独更新、编辑或删除。")
         self.definition_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.definition_table = self._build_definition_table()
         self.definition_card.body_layout.addWidget(self.definition_table)
@@ -128,7 +128,7 @@ class ToolsPage(QWidget):
         return table
 
     def _build_result_card(self) -> QWidget:
-        self.result_card = CardFrame("最近更新结果", "对比更新前后版本并标记执行结果。")
+        self.result_card = CardFrame("更新结果", "更新前后版本对比。")
         self.result_table = QTableWidget(0, 4)
         self.result_table.setHorizontalHeaderLabels(("名称", "类型", "版本", "结果"))
         configure_table(self.result_table, stretch_columns=(2,))
@@ -148,7 +148,7 @@ class ToolsPage(QWidget):
         self._edit_buttons = []
         self._delete_buttons = []
         entries = sorted(definitions.items(), key=lambda item: item[0].lower())
-        self.definition_meta.setText(f"已定义 {len(entries)} 个更新动作，支持 npm / npx / custom。")
+        self.definition_meta.setText(f"共 {len(entries)} 个更新定义（npm / npx / custom）")
         self.definition_table.setRowCount(len(entries))
         for row_index, (name, definition) in enumerate(entries):
             win_text, wsl_text, latest_text = self._definition_versions(name, definition, statuses)
@@ -235,15 +235,15 @@ class ToolsPage(QWidget):
         return f"Win {win} / WSL {wsl}"
 
     def _create_definition(self) -> None:
-        self._open_definition_dialog("新增更新定义")
+        self._open_definition_dialog("新增定义")
 
     def _edit_definition(self, name: str) -> None:
         if name not in self._definitions:
-            QMessageBox.warning(self, "编辑失败", f"未找到更新定义：{name}")
+            QMessageBox.warning(self, "编辑失败", f"找不到定义：{name}")
             return
         definition = self._definitions[name]
         self._open_definition_dialog(
-            "编辑更新定义",
+            "编辑定义",
             initial_name=name,
             initial_type=definition.get("type", "npm"),
             initial_value=self._definition_value(definition),
@@ -271,10 +271,10 @@ class ToolsPage(QWidget):
         tool_type = dialog.type_input.currentText()
         value = dialog.value_input.text().strip()
         if not name:
-            QMessageBox.warning(self, "保存失败", "请先填写名称。")
+            QMessageBox.warning(self, "保存失败", "请填写名称。")
             return
         if not value:
-            QMessageBox.warning(self, "保存失败", "请先填写包名或命令。")
+            QMessageBox.warning(self, "保存失败", "请填写包名或命令。")
             return
         definition = {"type": tool_type, "package": value} if tool_type == "npm" else {"type": tool_type, "command": value}
         next_definitions = deepcopy(self._definitions)
@@ -285,9 +285,9 @@ class ToolsPage(QWidget):
 
     def _delete_definition(self, name: str) -> None:
         if name not in self._definitions:
-            QMessageBox.warning(self, "删除失败", f"未找到更新定义：{name}")
+            QMessageBox.warning(self, "删除失败", f"找不到定义：{name}")
             return
-        answer = QMessageBox.question(self, "删除更新定义", f"确认删除 “{name}” 吗？")
+        answer = QMessageBox.question(self, "确认删除", f'确定要删除「{name}」吗？')
         if answer != QMessageBox.StandardButton.Yes:
             return
         next_definitions = deepcopy(self._definitions)

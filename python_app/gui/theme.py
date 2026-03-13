@@ -2,7 +2,7 @@ from PySide6.QtGui import QColor, QFont
 
 WINDOW_BACKGROUND = "#f4f7fb"
 SURFACE = "#ffffff"
-SURFACE_ALT = "#e8edf3"
+SURFACE_ALT = "#edf1f7"
 SURFACE_MUTED = "#cfd8e3"
 TEXT_PRIMARY = "#24313f"
 TEXT_MUTED = "#5c6d7f"
@@ -122,36 +122,46 @@ def build_stylesheet() -> str:
     QPushButton#navButton {{
         background: transparent;
         border: 1px solid transparent;
-        border-radius: 16px;
-        color: #e2e8f0;
-        font-weight: 700;
-        min-height: 44px;
-        padding: 0 14px;
+        border-left: 3px solid transparent;
+        border-radius: 12px;
+        color: #94a3b8;
+        font-weight: 600;
+        min-height: 40px;
+        padding: 0 12px;
         text-align: left;
     }}
     QPushButton#navButton:hover {{
         background: #273449;
-        border-color: {tint(ACCENT, 80)};
+        border-color: transparent;
+        border-left: 3px solid {tint(ACCENT, 120)};
+        color: #e2e8f0;
     }}
     QPushButton#navButton[active="true"] {{
-        background: {ACCENT};
-        color: white;
+        background: {tint(ACCENT, 30)};
+        border-left: 3px solid {ACCENT};
+        color: {ACCENT};
     }}
+    /* 卡片 */
     QFrame#card {{
         background: {SURFACE};
-        border: 1px solid {BORDER};
-        border-radius: 20px;
+        border: 1px solid rgba(184, 196, 209, 0.4);
+        border-bottom: 2px solid rgba(184, 196, 209, 0.25);
+        border-radius: 8px;
     }}
     QFrame#metricCard {{
         background: {SURFACE};
-        border: 1px solid {BORDER};
-        border-radius: 18px;
+        border: 1px solid rgba(184, 196, 209, 0.4);
+        border-bottom: 2px solid rgba(184, 196, 209, 0.25);
+        border-radius: 8px;
     }}
-    QPushButton#primaryButton, QPushButton#secondaryButton, QPushButton#dangerButton {{
-        border-radius: 12px;
+    /* 按钮 */
+    QPushButton#primaryButton,
+    QPushButton#secondaryButton,
+    QPushButton#dangerButton {{
+        border-radius: 8px;
         font-weight: 700;
         min-height: 38px;
-        padding: 0 16px;
+        padding: 0 18px;
     }}
     QPushButton#primaryButton {{
         background: {ACCENT};
@@ -159,7 +169,12 @@ def build_stylesheet() -> str:
         color: white;
     }}
     QPushButton#primaryButton:hover {{
+        background: #fb923c;
+        border-color: #fb923c;
+    }}
+    QPushButton#primaryButton:pressed {{
         background: #ea580c;
+        border-color: #ea580c;
     }}
     QPushButton#secondaryButton {{
         background: {SURFACE};
@@ -167,8 +182,14 @@ def build_stylesheet() -> str:
         color: {TEXT_PRIMARY};
     }}
     QPushButton#secondaryButton:hover {{
+        background: {WINDOW_BACKGROUND};
         border-color: {ACCENT};
         color: {ACCENT};
+    }}
+    QPushButton#secondaryButton:pressed {{
+        background: {SURFACE_ALT};
+        border-color: #ea580c;
+        color: #ea580c;
     }}
     QPushButton#dangerButton {{
         background: #991b1b;
@@ -176,12 +197,21 @@ def build_stylesheet() -> str:
         color: white;
     }}
     QPushButton#dangerButton:hover {{
-        background: #7f1d1d;
+        background: #b91c1c;
+        border-color: #b91c1c;
     }}
+    QPushButton#dangerButton:pressed {{
+        background: #7f1d1d;
+        border-color: #7f1d1d;
+    }}
+    QPushButton:disabled {{
+        opacity: 0.55;
+    }}
+    /* 输入框 */
     QLineEdit, QComboBox, QPlainTextEdit, QTableWidget {{
         background: {SURFACE};
         border: 1px solid {BORDER};
-        border-radius: 12px;
+        border-radius: 8px;
         selection-background-color: {ACCENT};
         selection-color: white;
     }}
@@ -191,9 +221,14 @@ def build_stylesheet() -> str:
     QLineEdit, QComboBox {{
         min-height: 22px;
     }}
+    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{
+        border: 1.5px solid {ACCENT};
+    }}
+    /* 表格 */
     QTableWidget {{
         gridline-color: {SURFACE_MUTED};
         alternate-background-color: {SURFACE_ALT};
+        border-radius: 8px;
         padding: 0;
     }}
     QHeaderView::section {{
@@ -230,24 +265,38 @@ def build_stylesheet() -> str:
     QTabWidget::pane {{
         border: 0;
     }}
+    /* 滚动条 */
     QScrollBar:vertical {{
         background: transparent;
-        width: 12px;
-        margin: 4px;
+        width: 6px;
+        margin: 2px;
     }}
     QScrollBar::handle:vertical {{
-        background: {SURFACE_MUTED};
-        border-radius: 6px;
-        min-height: 30px;
+        background: rgba(180, 190, 205, 0.45);
+        border-radius: 3px;
+        min-height: 28px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: rgba(160, 170, 185, 0.7);
     }}
     QScrollBar:horizontal {{
         background: transparent;
-        height: 12px;
-        margin: 4px;
+        height: 6px;
+        margin: 2px;
     }}
     QScrollBar::handle:horizontal {{
-        background: {SURFACE_MUTED};
-        border-radius: 6px;
-        min-width: 30px;
+        background: rgba(180, 190, 205, 0.45);
+        border-radius: 3px;
+        min-width: 28px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: rgba(160, 170, 185, 0.7);
+    }}
+    /* 隐藏滚动条端部按钮 */
+    QScrollBar::add-line, QScrollBar::sub-line {{
+        height: 0; width: 0;
+    }}
+    QScrollBar::add-page, QScrollBar::sub-page {{
+        background: transparent;
     }}
     """

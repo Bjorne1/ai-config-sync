@@ -37,8 +37,8 @@ MATRIX_GROUPS = (
     ("WSL", tuple(range(MATRIX_START_COLUMN + 4, MATRIX_START_COLUMN + 8))),
 )
 
-BADGE_SIZE = QSize(42, 26)
-ICON_SIZE = 16
+BADGE_SIZE = QSize(40, 24)
+ICON_SIZE = 15
 INACTIVE_BG = "#edf1f5"
 INACTIVE_BORDER = "#d3dce6"
 
@@ -83,8 +83,8 @@ def matrix_tooltip(
     if active and entry:
         return f"{prefix} / {tool_id} · {entry.get('message') or entry['state']}"
     if active:
-        return f"{prefix} / {tool_id} · 已检测到目标，点击后移除"
-    return f"{prefix} / {tool_id} · 未同步，点击后同步"
+        return f"{prefix} / {tool_id} · 已检测到目标，点击移除"
+    return f"{prefix} / {tool_id} · 未同步，点击同步"
 
 
 class ToolLogoDelegate(QStyledItemDelegate):
@@ -94,7 +94,7 @@ class ToolLogoDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         base = super().sizeHint(option, index)
-        return QSize(max(base.width(), BADGE_SIZE.width() + 16), max(base.height(), BADGE_SIZE.height() + 12))
+        return QSize(max(base.width(), BADGE_SIZE.width() + 12), max(base.height(), BADGE_SIZE.height() + 10))
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         if not is_matrix_cell(index):
@@ -106,21 +106,23 @@ class ToolLogoDelegate(QStyledItemDelegate):
         painter.restore()
 
     def _paint_badge(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        tool_id = str(index.data(LOGO_TOOL_ROLE) or "")
+        if not tool_id:
+            return
         active = bool(index.data(LOGO_ACTIVE_ROLE))
         state = str(index.data(LOGO_STATE_ROLE) or "idle")
-        tool_id = str(index.data(LOGO_TOOL_ROLE) or "")
         border, background = self._badge_colors(state, active)
         badge_rect = self._badge_rect(option)
         painter.setPen(QPen(QColor(border), 1))
         painter.setBrush(QColor(background))
-        painter.drawRoundedRect(badge_rect, 9, 9)
+        painter.drawRoundedRect(badge_rect, 8, 8)
         self._draw_logo(painter, badge_rect, tool_id, active)
         if not active:
             overlay = QColor("#c5ced8")
             overlay.setAlpha(108)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(overlay)
-            painter.drawRoundedRect(badge_rect, 9, 9)
+            painter.drawRoundedRect(badge_rect, 8, 8)
 
     def _badge_rect(self, option: QStyleOptionViewItem):
         left = option.rect.x() + (option.rect.width() - BADGE_SIZE.width()) // 2

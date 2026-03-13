@@ -55,7 +55,7 @@ class StatPill(QLabel):
 
     def _apply_style(self) -> None:
         self.setStyleSheet(
-            f"border: 1px solid {self._fg}; border-radius: 12px; padding: 3px 10px; color: {self._fg}; background: {self._bg};"
+            f"border: 1px solid {self._fg}; border-radius: 10px; padding: 2px 8px; color: {self._fg}; background: {self._bg}; font-size: 11px;"
         )
 
 
@@ -64,7 +64,7 @@ class StatTag(QLabel):
         super().__init__(text, parent)
         self.setObjectName("muted")
         self.setStyleSheet(
-            f"border: 1px solid {BORDER}; border-radius: 12px; padding: 3px 10px; color: {TEXT_MUTED}; background: transparent;"
+            f"border: 1px solid {BORDER}; border-radius: 10px; padding: 2px 8px; color: {TEXT_MUTED}; background: transparent; font-size: 11px;"
         )
 
 
@@ -73,7 +73,7 @@ class ToolStatsRow(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
         self._tag = StatTag(label)
         layout.addWidget(self._tag)
         self._pills: dict[str, StatPill] = {}
@@ -132,8 +132,8 @@ class Pager(QWidget):
         self._page_index = 0
         self._page_count = 0
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(8)
         self._stats = None
         self._win_stats = None
         self._wsl_stats = None
@@ -141,7 +141,7 @@ class Pager(QWidget):
             stats = QWidget()
             stats_layout = QVBoxLayout(stats)
             stats_layout.setContentsMargins(0, 0, 0, 0)
-            stats_layout.setSpacing(4)
+            stats_layout.setSpacing(3)
             win_stats = ToolStatsRow("WIN 已安装")
             wsl_stats = ToolStatsRow("WSL 已安装")
             stats_layout.addWidget(win_stats)
@@ -160,7 +160,9 @@ class Pager(QWidget):
             layout.addWidget(self._stats)
         layout.addStretch(1)
         layout.addWidget(self.prev_button)
+        layout.addSpacing(2)
         layout.addWidget(self.next_button)
+        layout.addSpacing(4)
         layout.addWidget(self.label)
         self.set_state(0, 0, 0)
         self.set_stats({"windows": {}, "wsl": {}})
