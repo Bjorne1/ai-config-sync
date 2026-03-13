@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -19,7 +19,7 @@ class OverviewPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 8)
-        layout.setSpacing(18)
+        layout.setSpacing(12)
         layout.addWidget(self._build_metric_strip())
         layout.addWidget(self._build_board())
         layout.addWidget(self._build_env_log_row())
@@ -43,7 +43,7 @@ class OverviewPage(QWidget):
         grid.setVerticalSpacing(16)
         grid.setColumnStretch(0, 7)
         grid.setColumnStretch(1, 5)
-        grid.addWidget(self._build_summary_card(), 0, 0)
+        grid.addWidget(self._build_summary_card(), 0, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self._build_context_column(), 0, 1)
         return layout_container(grid)
 
@@ -105,8 +105,8 @@ class OverviewPage(QWidget):
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(16)
-        grid.setColumnStretch(0, 4)
-        grid.setColumnStretch(1, 7)
+        grid.setColumnStretch(0, 6)
+        grid.setColumnStretch(1, 5)
         grid.addWidget(self._build_environment_card(), 0, 0)
         grid.addWidget(self._build_log_card(), 0, 1)
         return layout_container(grid)
@@ -116,7 +116,8 @@ class OverviewPage(QWidget):
         self.environment_table = QTableWidget(0, 4)
         self.environment_table.setHorizontalHeaderLabels(("环境", "状态", "Skills 根", "Commands 根"))
         configure_table(self.environment_table, stretch_columns=(2, 3))
-        self.environment_table.setMaximumHeight(170)
+        self.environment_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.environment_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         card.body_layout.addWidget(self.environment_table)
         return card
 
@@ -124,7 +125,8 @@ class OverviewPage(QWidget):
         card = CardFrame("操作日志", "最近同步结果与最近 6 条操作记录。")
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
-        self.log_view.setMinimumHeight(170)
+        self.log_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.log_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         card.body_layout.addWidget(self.log_view)
         return card
 
@@ -133,6 +135,8 @@ class OverviewPage(QWidget):
         self.issue_table = QTableWidget(0, 5)
         self.issue_table.setHorizontalHeaderLabels(("资源", "环境", "工具", "状态", "目标"))
         configure_table(self.issue_table, stretch_columns=(0, 4))
+        self.issue_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.issue_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         card.body_layout.addWidget(self.issue_table)
         return card
 
@@ -184,7 +188,9 @@ class OverviewPage(QWidget):
                 environment["targets"]["commands"]["codex"] or environment.get("error") or "不可用",
             ]
             for column, value in enumerate(values):
-                self.environment_table.setItem(row_index, column, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
+                self.environment_table.setItem(row_index, column, item)
 
     def _fill_issue_table(self, issues: list[dict[str, object]]) -> None:
         self.issue_table.setRowCount(len(issues))

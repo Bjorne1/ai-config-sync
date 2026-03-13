@@ -75,7 +75,7 @@ class MetricCard(QFrame):
     def __init__(self, label: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("metricCard")
-        self.setMinimumHeight(140)
+        self.setMinimumHeight(100)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         _apply_card_shadow(self)
         layout = QVBoxLayout(self)
