@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "skills": {
+    "pua": {
+      "url": "https://github.com/tanweai/pua/tree/main/skills/pua",
+      "installedCommit": "ac015ceb0e8511e8df65f640176417a8d35553d0"
+    }
+  }
+}

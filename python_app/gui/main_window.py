@@ -18,13 +18,14 @@ from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
 from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
+from .pages.skill_upstream_page import SkillUpstreamPage
 from .pages.status_page import StatusPage
 from .pages.tools_page import ToolsPage
 from .theme import build_stylesheet
 from .widgets import NavButton
 
-PAGE_KEYS = ("overview", "skills", "commands", "status", "config", "cleanup", "tools")
-PAGE_LABELS = ("概览", "Skills", "Commands", "状态", "配置", "清理", "工具更新")
+PAGE_KEYS = ("overview", "skills", "skillUpstreams", "commands", "status", "config", "cleanup", "tools")
+PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "状态", "配置", "清理", "工具更新")
 
 
 class MainWindow(QMainWindow):
@@ -38,6 +39,10 @@ class MainWindow(QMainWindow):
     update_tools_requested = Signal()
     update_tool_requested = Signal(str)
     save_tool_definitions_requested = Signal(object)
+    skill_add_requested = Signal(object)
+    skill_set_url_requested = Signal(object)
+    skill_check_requested = Signal(object)
+    skill_upgrade_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +55,7 @@ class MainWindow(QMainWindow):
         self.busy: dict[str, bool] = {}
         self.setWindowTitle("AI Config Sync")
         self.resize(1520, 960)
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
         self.setStyleSheet(build_stylesheet())
         self._build_ui()
 
@@ -127,6 +133,7 @@ class MainWindow(QMainWindow):
     def _create_pages(self) -> None:
         self.overview_page = OverviewPage()
         self.skills_page = ResourcePage("skills")
+        self.skill_upstream_page = SkillUpstreamPage()
         self.commands_page = ResourcePage("commands")
         self.status_page = StatusPage()
         self.config_page = ConfigPage()
@@ -135,6 +142,7 @@ class MainWindow(QMainWindow):
         page_list = [
             self.overview_page,
             self.skills_page,
+            self.skill_upstream_page,
             self.commands_page,
             self.status_page,
             self.config_page,
@@ -147,6 +155,10 @@ class MainWindow(QMainWindow):
         self.overview_page.sync_all_requested.connect(self.sync_all_requested.emit)
         self.skills_page.rescan_requested.connect(self.rescan_requested.emit)
         self.skills_page.sync_requested.connect(self.sync_selected_requested.emit)
+        self.skill_upstream_page.add_requested.connect(self.skill_add_requested.emit)
+        self.skill_upstream_page.set_url_requested.connect(self.skill_set_url_requested.emit)
+        self.skill_upstream_page.check_requested.connect(self.skill_check_requested.emit)
+        self.skill_upstream_page.upgrade_requested.connect(self.skill_upgrade_requested.emit)
         self.commands_page.rescan_requested.connect(self.rescan_requested.emit)
         self.commands_page.sync_requested.connect(self.sync_selected_requested.emit)
         self.config_page.reload_requested.connect(self.reload_wsl_requested.emit)
@@ -196,6 +208,10 @@ class MainWindow(QMainWindow):
         )
         self._refresh_busy()
 
+    def set_skill_update_results(self, results: list[dict[str, object]]) -> None:
+        self.skill_upstream_page.set_update_results(results)
+        self._refresh_busy()
+
     def set_logs(self, logs: list[dict[str, str]]) -> None:
         self.logs = deepcopy(logs)
         self._refresh_views()
@@ -236,6 +252,10 @@ class MainWindow(QMainWindow):
         latest_log = self.logs[0] if self.logs else None
         self.overview_page.set_context(stats, self.snapshot, latest_log, self.last_sync_summary, len(issues))
         self.skills_page.set_rows(self._resource_rows("skills"))
+        self.skill_upstream_page.set_context(
+            self.snapshot["inventory"]["skills"],
+            self.snapshot.get("skillUpstreams", {}),
+        )
         self.commands_page.set_rows(self._resource_rows("commands"))
         self.status_page.set_context(self.snapshot["status"]["environments"], issues, self.logs, self.last_sync_summary)
         self.config_page.set_context(self.snapshot["config"], self.snapshot["wslRuntime"])
@@ -260,6 +280,9 @@ class MainWindow(QMainWindow):
     def _refresh_busy(self) -> None:
         self.overview_page.set_busy(self._busy("refresh"), self._busy("syncAll"))
         self.skills_page.set_busy(self._busy("scanSkills"), self._busy("syncSkills"))
+        self.skill_upstream_page.set_busy(
+            self._busy("skillAdd") or self._busy("skillSetUrl") or self._busy("skillCheck") or self._busy("skillUpgrade")
+        )
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
         self.cleanup_page.set_busy(self._busy("cleanup"))

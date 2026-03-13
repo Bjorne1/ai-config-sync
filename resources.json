@@ -1,7 +1,14 @@
 {
   "version": 1,
   "resources": {
-    "skills": {},
+    "skills": {
+      "pua": {
+        "windows": [
+          "claude",
+          "codex"
+        ]
+      }
+    },
     "commands": {}
   }
 }

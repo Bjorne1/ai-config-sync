@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 from typing import Callable
+from pathlib import Path, PurePosixPath
 
 from .config_service import load_config, normalize_config_shape, save_config
 from .environment_service import (
@@ -18,6 +19,14 @@ from .remove_operations import remove_configured_resources
 from .resource_service import scan_resources
 from .runtime_service import build_environment_list, build_wsl_runtime
 from .updater import build_update_tool_statuses, update_all_tools
+from .skill_upstream_state_service import load_skill_upstreams, save_skill_upstreams
+from .github_skill_upstream import (
+    derive_child_tree_url,
+    get_latest_commit_sha,
+    install_github_tree_to_dir,
+    parse_github_tree_url,
+    validate_skill_name,
+)
 
 
 def _replace_resource_map(
@@ -62,8 +71,10 @@ class ServiceDependencies:
     get_wsl_home_dir: Callable = get_wsl_home_dir
     list_wsl_distros: Callable = list_wsl_distros
     load_config: Callable = load_config
+    load_skill_upstreams: Callable = load_skill_upstreams
     resolve_environment_targets: Callable = resolve_environment_targets
     save_config: Callable = save_config
+    save_skill_upstreams: Callable = save_skill_upstreams
     update_all_tools: Callable = update_all_tools
 
 
@@ -97,6 +108,126 @@ class AppService:
 
     def scan_resources(self, kind: str) -> list[dict[str, object]]:
         return scan_resources(self.deps.load_config(), kind)
+
+    def get_skill_upstreams(self) -> dict[str, dict[str, object]]:
+        return self.deps.load_skill_upstreams()
+
+    def set_skill_upstream_url(
+        self,
+        names: list[str],
+        url: str,
+    ) -> dict[str, dict[str, object]]:
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            raise ValueError("URL 不能为空。")
+        upstreams = self.deps.load_skill_upstreams()
+        next_upstreams = {**upstreams}
+        for name in names:
+            skill_name = validate_skill_name(name)
+            parsed = parse_github_tree_url(normalized_url)
+            leaf = str(PurePosixPath(parsed.path).name) if parsed.path else ""
+            skill_url = normalized_url if leaf == skill_name else derive_child_tree_url(normalized_url, skill_name)
+            previous = next_upstreams.get(skill_name, {}) if isinstance(next_upstreams.get(skill_name), dict) else {}
+            if previous.get("url") == skill_url and previous.get("installedCommit"):
+                next_upstreams[skill_name] = {**previous, "url": skill_url}
+            else:
+                next_upstreams[skill_name] = {"url": skill_url}
+        return self.deps.save_skill_upstreams(next_upstreams)
+
+    def add_skill_from_url(self, name: str, url: str) -> dict[str, object]:
+        config = self.deps.load_config()
+        source_dir = config["sourceDirs"]["skills"]
+        skill_name = validate_skill_name(name)
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            raise ValueError("URL 不能为空。")
+        source = parse_github_tree_url(normalized_url)
+        leaf = str(PurePosixPath(source.path).name) if source.path else ""
+        if leaf != skill_name:
+            normalized_url = derive_child_tree_url(normalized_url, skill_name)
+            source = parse_github_tree_url(normalized_url)
+        installed_commit = install_github_tree_to_dir(source, Path(source_dir) / skill_name)
+        upstreams = self.deps.load_skill_upstreams()
+        next_upstreams = {**upstreams, skill_name: {"url": normalized_url, "installedCommit": installed_commit}}
+        self.deps.save_skill_upstreams(next_upstreams)
+        return {"name": skill_name, "url": normalized_url, "installedCommit": installed_commit}
+
+    def check_skill_updates(self, names: list[str] | None = None) -> list[dict[str, object]]:
+        upstreams = self.deps.load_skill_upstreams()
+        selected = names or sorted(upstreams.keys())
+        results: list[dict[str, object]] = []
+        for name in selected:
+            skill_name = validate_skill_name(name)
+            entry = upstreams.get(skill_name)
+            if not isinstance(entry, dict) or not entry.get("url"):
+                results.append(
+                    {
+                        "name": skill_name,
+                        "configured": False,
+                        "installedCommit": None,
+                        "latestCommit": None,
+                        "updateAvailable": False,
+                        "message": "未配置更新 URL",
+                    }
+                )
+                continue
+            url = str(entry.get("url") or "").strip()
+            installed = str(entry.get("installedCommit") or "").strip() or None
+            source = parse_github_tree_url(url)
+            latest = get_latest_commit_sha(source)
+            if installed is None:
+                results.append(
+                    {
+                        "name": skill_name,
+                        "configured": True,
+                        "url": url,
+                        "installedCommit": None,
+                        "latestCommit": latest,
+                        "updateAvailable": True,
+                        "message": "未记录已安装版本",
+                    }
+                )
+                continue
+            results.append(
+                {
+                    "name": skill_name,
+                    "configured": True,
+                    "url": url,
+                    "installedCommit": installed,
+                    "latestCommit": latest,
+                    "updateAvailable": bool(latest and latest != installed),
+                    "message": "有更新" if latest and latest != installed else "已是最新",
+                }
+            )
+        return results
+
+    def upgrade_skill_sources(self, names: list[str]) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        source_dir = config["sourceDirs"]["skills"]
+        upstreams = self.deps.load_skill_upstreams()
+        next_upstreams = {**upstreams}
+        results: list[dict[str, object]] = []
+        for name in names:
+            skill_name = validate_skill_name(name)
+            entry = upstreams.get(skill_name)
+            if not isinstance(entry, dict) or not entry.get("url"):
+                raise ValueError(f"未配置更新 URL：{skill_name}")
+            url = str(entry.get("url") or "").strip()
+            source = parse_github_tree_url(url)
+            installed_commit = install_github_tree_to_dir(source, Path(source_dir) / skill_name)
+            next_upstreams[skill_name] = {"url": url, "installedCommit": installed_commit}
+            results.append(
+                {
+                    "name": skill_name,
+                    "url": url,
+                    "installedCommit": installed_commit,
+                    "latestCommit": installed_commit,
+                    "success": True,
+                    "message": "已更新",
+                }
+            )
+        self.deps.save_skill_upstreams(next_upstreams)
+        return results
 
     def replace_resource_map(
         self,

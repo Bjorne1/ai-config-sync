@@ -55,6 +55,10 @@ class AppController(QObject):
         self.window.update_tools_requested.connect(self._update_tools)
         self.window.update_tool_requested.connect(self._update_tool)
         self.window.save_tool_definitions_requested.connect(self._save_tool_definitions)
+        self.window.skill_add_requested.connect(self._skill_add)
+        self.window.skill_set_url_requested.connect(self._skill_set_url)
+        self.window.skill_check_requested.connect(self._skill_check)
+        self.window.skill_upgrade_requested.connect(self._skill_upgrade)
 
     def _fetch_snapshot(self) -> dict[str, object]:
         config = self.service.get_config()
@@ -68,6 +72,7 @@ class AppController(QObject):
                 "skills": self.service.scan_resources("skills"),
                 "commands": self.service.scan_resources("commands"),
             },
+            "skillUpstreams": self.service.get_skill_upstreams(),
         }
 
     def _after_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -171,6 +176,64 @@ class AppController(QObject):
             lambda: self.service.save_config({"updateTools": definitions}),
             lambda _result: self.refresh_snapshot(False, "refreshAfterSaveToolDefinitions"),
         )
+
+    def _skill_add(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict.")
+        name = str(payload.get("name") or "").strip()
+        url = str(payload.get("url") or "").strip()
+        self._run_task(
+            "skillAdd",
+            "新增线上 Skill",
+            lambda: self.service.add_skill_from_url(name, url),
+            lambda _result: self.refresh_snapshot(False, "refreshAfterSkillAdd"),
+        )
+
+    def _skill_set_url(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict.")
+        raw_names = payload.get("names", [])
+        if not isinstance(raw_names, list) or any(not isinstance(name, str) for name in raw_names):
+            raise ValueError("names must be a list of strings.")
+        url = str(payload.get("url") or "").strip()
+        self._run_task(
+            "skillSetUrl",
+            "设置 Skill 更新 URL",
+            lambda: self.service.set_skill_upstream_url(raw_names, url),
+            lambda _result: self.refresh_snapshot(False, "refreshAfterSkillSetUrl"),
+        )
+
+    def _skill_check(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict.")
+        raw_names = payload.get("names", [])
+        if not isinstance(raw_names, list) or any(not isinstance(name, str) for name in raw_names):
+            raise ValueError("names must be a list of strings.")
+        self._run_task(
+            "skillCheck",
+            "检查 Skill 更新",
+            lambda: self.service.check_skill_updates(raw_names),
+            lambda result: self.window.set_skill_update_results(result),
+            log_success=True,
+            reset_error=False,
+        )
+
+    def _skill_upgrade(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict.")
+        raw_names = payload.get("names", [])
+        if not isinstance(raw_names, list) or any(not isinstance(name, str) for name in raw_names):
+            raise ValueError("names must be a list of strings.")
+        self._run_task(
+            "skillUpgrade",
+            "下载 Skill 更新",
+            lambda: self.service.upgrade_skill_sources(raw_names),
+            lambda result: self._after_skill_upgrade(result),
+        )
+
+    def _after_skill_upgrade(self, result: list[dict[str, object]]) -> None:
+        self.window.set_skill_update_results(result)
+        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSkillUpgrade")
 
     def _run_task(
         self,

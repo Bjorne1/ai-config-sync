@@ -127,29 +127,37 @@ class ToolStatsRow(QWidget):
 class Pager(QWidget):
     page_requested = Signal(int)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, show_stats: bool = True) -> None:
         super().__init__(parent)
         self._page_index = 0
         self._page_count = 0
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        self._stats = QWidget()
-        stats_layout = QVBoxLayout(self._stats)
-        stats_layout.setContentsMargins(0, 0, 0, 0)
-        stats_layout.setSpacing(4)
-        self._win_stats = ToolStatsRow("WIN 已安装")
-        self._wsl_stats = ToolStatsRow("WSL 已安装")
-        stats_layout.addWidget(self._win_stats)
-        stats_layout.addWidget(self._wsl_stats)
-        self._fix_stats_width()
+        self._stats = None
+        self._win_stats = None
+        self._wsl_stats = None
+        if show_stats:
+            stats = QWidget()
+            stats_layout = QVBoxLayout(stats)
+            stats_layout.setContentsMargins(0, 0, 0, 0)
+            stats_layout.setSpacing(4)
+            win_stats = ToolStatsRow("WIN 已安装")
+            wsl_stats = ToolStatsRow("WSL 已安装")
+            stats_layout.addWidget(win_stats)
+            stats_layout.addWidget(wsl_stats)
+            self._stats = stats
+            self._win_stats = win_stats
+            self._wsl_stats = wsl_stats
+            self._fix_stats_width()
         self.prev_button = ActionButton("上一页", "secondary")
         self.next_button = ActionButton("下一页", "secondary")
         self.label = QLabel("")
         self.label.setObjectName("muted")
         self.prev_button.clicked.connect(self._request_prev)
         self.next_button.clicked.connect(self._request_next)
-        layout.addWidget(self._stats)
+        if self._stats is not None:
+            layout.addWidget(self._stats)
         layout.addStretch(1)
         layout.addWidget(self.prev_button)
         layout.addWidget(self.next_button)
@@ -158,6 +166,8 @@ class Pager(QWidget):
         self.set_stats({"windows": {}, "wsl": {}})
 
     def _fix_stats_width(self) -> None:
+        if self._stats is None or self._win_stats is None or self._wsl_stats is None:
+            return
         win_widths = self._win_stats.required_pill_widths(MAX_DISPLAY_COUNT)
         wsl_widths = self._wsl_stats.required_pill_widths(MAX_DISPLAY_COUNT)
         merged_widths = {tool_id: max(win_widths.get(tool_id, 0), wsl_widths.get(tool_id, 0)) for tool_id in TOOL_IDS}
@@ -181,6 +191,8 @@ class Pager(QWidget):
         self.label.setText(f"第 {page_index + 1} / {page_count} 页 · 共 {total} 条")
 
     def set_stats(self, stats: dict[str, dict[str, int]]) -> None:
+        if self._win_stats is None or self._wsl_stats is None:
+            return
         self._win_stats.set_counts(stats.get("windows", {}))
         self._wsl_stats.set_counts(stats.get("wsl", {}))
 
