@@ -151,10 +151,6 @@ start.bat
       }
     }
   },
-  "resources": {
-    "skills": {},
-    "commands": {}
-  },
   "commandSubfolderSupport": {
     "default": false,
     "tools": {
@@ -177,9 +173,13 @@ start.bat
 说明：
 
 - `syncMode` 为全局配置，同时作用于 Windows 与 WSL
-- `resources.skills` / `resources.commands` 记录每个资源分配到哪些工具
+- 资源分配（哪些 Skills / Commands 同步到哪些工具）存放在 `resources.json`
 - Windows 默认目标使用 `%USERPROFILE%` 占位符
 - WSL 默认目标使用 `$HOME` 占位符
+
+迁移说明：
+
+- 从 `CONFIG_VERSION=3` 升级到 `CONFIG_VERSION=4` 后，若旧的 `config.json` 仍包含 `resources` 字段，程序会在启动时把它迁移到 `resources.json`，并自动重写 `config.json`（移除 `resources`）。
 
 ## WSL 同步说明
 

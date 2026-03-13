@@ -13,7 +13,7 @@ def _create_config(root: Path) -> dict[str, object]:
     (skills_dir / "demo-skill").mkdir()
     (commands_dir / "brainstorming.md").write_text("# test", encoding="utf-8")
     return {
-        "version": 3,
+        "version": 4,
         "syncMode": "copy",
         "sourceDirs": {
             "skills": str(skills_dir),

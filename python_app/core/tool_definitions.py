@@ -54,7 +54,7 @@ DEFAULT_UPDATE_TOOLS = {
     "ace-tool": {"type": "npm", "package": "ace-tool"},
 }
 DEFAULT_SYNC_MODE = "symlink"
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 WINDOWS_HOME_TOKEN = "%USERPROFILE%"
 WSL_HOME_TOKEN = "$HOME"
 

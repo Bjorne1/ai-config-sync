@@ -27,11 +27,13 @@ class ConfigServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config_file = root / "config.json"
+            resources_file = root / "resources.json"
             with mock.patch.object(config_service, "PROJECT_ROOT", root):
                 with mock.patch.object(config_service, "CONFIG_FILE", config_file):
                     config = config_service.load_config()
                     self.assertTrue(config_file.exists())
-        self.assertEqual(config["version"], 3)
+                    self.assertTrue(resources_file.exists())
+        self.assertEqual(config["version"], 4)
         self.assertIn("skills", config["sourceDirs"])
 
 

@@ -14,7 +14,7 @@ def _create_config(root: Path) -> dict[str, object]:
     commands_dir.mkdir()
     (skills_dir / "demo-skill").mkdir()
     return {
-        "version": 3,
+        "version": 4,
         "syncMode": "copy",
         "sourceDirs": {
             "skills": str(skills_dir),

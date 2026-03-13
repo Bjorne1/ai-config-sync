@@ -4,6 +4,8 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
+from .resource_assignments import normalize_resource_map
+from .resource_state_service import load_resources, save_resources
 from .tool_definitions import (
     CONFIG_VERSION,
     DEFAULT_COMMAND_SUBFOLDER_SUPPORT,
@@ -42,45 +44,11 @@ def resolve_source_dir(config_path: str | None) -> str | None:
     return str((PROJECT_ROOT / config_path).resolve())
 
 
-def normalize_tool_list(items: object) -> list[str]:
-    raw_items = items if isinstance(items, list) else []
-    unique_items: list[str] = []
-    for item in raw_items:
-        if item in TOOL_IDS and item not in unique_items:
-            unique_items.append(item)
-    return unique_items
-
-
-def normalize_environment_assignments(
-    value: object,
-    legacy_wsl_enabled: bool = False,
-) -> dict[str, list[str]]:
-    if isinstance(value, list):
-        windows_tools = normalize_tool_list(value)
-        wsl_tools = list(windows_tools) if legacy_wsl_enabled else []
-    else:
-        source = value if isinstance(value, dict) else {}
-        windows_tools = normalize_tool_list(source.get("windows"))
-        wsl_tools = normalize_tool_list(source.get("wsl"))
-    normalized = {
-        environment_id: tools
-        for environment_id, tools in (("windows", windows_tools), ("wsl", wsl_tools))
-        if tools
-    }
-    return normalized
-
-
-def normalize_resource_map(
-    raw_map: object,
-    legacy_wsl_enabled: bool = False,
-) -> dict[str, dict[str, list[str]]]:
-    entries = raw_map.items() if isinstance(raw_map, dict) else []
-    normalized: dict[str, dict[str, list[str]]] = {}
-    for name, assignments in entries:
-        environment_assignments = normalize_environment_assignments(assignments, legacy_wsl_enabled)
-        if environment_assignments:
-            normalized[name] = environment_assignments
-    return normalized
+def _extract_embedded_resources(raw_config: object) -> dict[str, object] | None:
+    if not isinstance(raw_config, dict):
+        return None
+    resources = raw_config.get("resources")
+    return resources if isinstance(resources, dict) else None
 
 
 def normalize_command_subfolder_support(raw_support: object) -> dict[str, object]:
@@ -145,7 +113,6 @@ def create_default_config() -> dict[str, object]:
                 },
             },
         },
-        "resources": {"skills": {}, "commands": {}},
         "commandSubfolderSupport": normalize_command_subfolder_support(None),
         "updateTools": normalize_update_tools(None),
     }
@@ -154,7 +121,7 @@ def create_default_config() -> dict[str, object]:
 def is_legacy_config(config: object) -> bool:
     if not isinstance(config, dict):
         return True
-    return any(key not in config for key in ("version", "sourceDirs", "environments", "resources"))
+    return any(key not in config for key in ("version", "sourceDirs", "environments"))
 
 
 def merge_targets(default_targets: dict[str, str], overrides: object) -> dict[str, str]:
@@ -270,13 +237,21 @@ def normalize_config_shape(raw_config: object) -> dict[str, object]:
     }
 
 
-def parse_config_file(raw_content: str) -> tuple[dict[str, object], bool]:
+def _build_config_file_payload(config: dict[str, object]) -> dict[str, object]:
+    payload = {key: value for key, value in config.items() if key != "resources"}
+    payload["version"] = CONFIG_VERSION
+    return payload
+
+
+def parse_config_file(raw_content: str) -> tuple[dict[str, object], bool, dict[str, object] | None]:
     parsed = json.loads(raw_content)
+    embedded_resources = _extract_embedded_resources(parsed)
     if is_legacy_config(parsed):
-        return migrate_legacy_config(parsed), True
+        migrated = migrate_legacy_config(parsed)
+        return migrated, True, migrated.get("resources") if isinstance(migrated.get("resources"), dict) else None
     normalized = normalize_config_shape(parsed)
-    migrated = parsed.get("version") != CONFIG_VERSION
-    return normalized, migrated
+    migrated = parsed.get("version") != CONFIG_VERSION or embedded_resources is not None
+    return normalized, migrated, embedded_resources
 
 
 def ensure_config_directories(config: dict[str, object]) -> None:
@@ -288,11 +263,15 @@ def ensure_config_directories(config: dict[str, object]) -> None:
 
 def save_config(config: dict[str, object]) -> dict[str, object]:
     normalized = normalize_config_shape(config)
+    normalized_resources = save_resources(
+        normalized.get("resources", {}),
+        state_file=PROJECT_ROOT / "resources.json",
+    )
     CONFIG_FILE.write_text(
-        json.dumps(normalized, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(_build_config_file_payload(normalized), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    return normalized
+    return {**normalized, "resources": normalized_resources}
 
 
 def load_config() -> dict[str, object]:
@@ -301,8 +280,16 @@ def load_config() -> dict[str, object]:
         ensure_config_directories(created)
         return save_config(created)
     raw_content = CONFIG_FILE.read_text(encoding="utf-8")
-    config, migrated = parse_config_file(raw_content)
+    config, migrated, embedded_resources = parse_config_file(raw_content)
+    runtime_resources = config.get("resources", {"skills": {}, "commands": {}})
+    if embedded_resources is None:
+        runtime_resources = load_resources(state_file=PROJECT_ROOT / "resources.json")
+        config = {**config, "resources": runtime_resources}
     ensure_config_directories(config)
-    if migrated or raw_content.strip() != json.dumps(config, indent=2, ensure_ascii=False):
+    normalized_file = json.dumps(_build_config_file_payload(config), indent=2, ensure_ascii=False)
+    if migrated or raw_content.strip() != normalized_file:
         return save_config(config)
-    return config
+    if embedded_resources is not None:
+        save_resources(runtime_resources, state_file=PROJECT_ROOT / "resources.json")
+        return {**config, "resources": runtime_resources}
+    return {**config, "resources": runtime_resources}
