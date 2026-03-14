@@ -7,6 +7,20 @@ import sys
 import tempfile
 from pathlib import Path
 
+WSL_MYSQL_EXE_CANDIDATES = [
+    "/mnt/c/Program Files/MySQL/MySQL Server 5.7/bin/mysql.exe",
+    "/mnt/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe",
+    "/mnt/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe",
+]
+
+LOCALHOST_ADDRESSES = {"127.0.0.1", "localhost", "::1"}
+
+DEFAULT_USER = "wh_drg_read"
+DEFAULT_PASSWORD = "wh_drg_read"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 3306
+DEFAULT_DATABASE = "wh_drg"
+
 
 def _first_env(*names: str) -> str | None:
     for name in names:
@@ -26,27 +40,82 @@ def _env_int(*names: str) -> int | None:
         return None
 
 
+def _is_wsl() -> bool:
+    """Detect WSL by checking /proc/version for 'microsoft'."""
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
+
+def _get_windows_host_ip() -> str | None:
+    """Get Windows host IP from WSL via default gateway (dynamic per boot)."""
+    try:
+        output = subprocess.check_output(
+            ["ip", "route", "show", "default"], text=True,
+        )
+        parts = output.strip().split()
+        return parts[2] if len(parts) >= 3 else None
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        return None
+
+
 def _resolve_mysql_executable(explicit_path: str | None) -> str:
     if explicit_path:
         return explicit_path
 
-    env_path = _first_env("WH_DRG_MYSQL_EXE", "MYSQL_EXE", "WH_DRG_MYSQL_BIN", "MYSQL_BIN")
+    env_path = _first_env(
+        "WH_DRG_MYSQL_EXE", "MYSQL_EXE",
+        "WH_DRG_MYSQL_BIN", "MYSQL_BIN",
+    )
     if env_path:
         return env_path
+
+    # In WSL, prefer Windows mysql.exe for seamless localhost connectivity
+    if _is_wsl():
+        for candidate in WSL_MYSQL_EXE_CANDIDATES:
+            if Path(candidate).exists():
+                return candidate
 
     which_path = shutil.which("mysql")
     if which_path:
         return which_path
 
-    windows_candidates = [r"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysql.exe"]
-    for candidate in windows_candidates:
-        if Path(candidate).exists():
-            return candidate
+    # Non-WSL Windows fallback
+    if not _is_wsl():
+        for candidate in WSL_MYSQL_EXE_CANDIDATES:
+            win_path = candidate.replace("/mnt/c/", r"C:\\").replace("/", "\\")
+            if Path(win_path).exists():
+                return win_path
 
     raise FileNotFoundError(
         "未找到 mysql 可执行文件；请先确保 `mysql --version` 可用，"
         "或设置环境变量 MYSQL_EXE 指向 mysql.exe 完整路径。"
     )
+
+
+def _resolve_host(host: str, mysql_executable: str) -> str:
+    """In WSL with native mysql client, resolve localhost to Windows host IP."""
+    if not _is_wsl():
+        return host
+    if mysql_executable.lower().endswith(".exe"):
+        return host
+    if host not in LOCALHOST_ADDRESSES:
+        return host
+
+    windows_ip = _get_windows_host_ip()
+    if windows_ip:
+        print(
+            f"[WSL] 将 {host} 替换为 Windows 宿主 IP: {windows_ip}",
+            file=sys.stderr,
+        )
+        return windows_ip
+
+    print(
+        f"[WSL] 警告：无法获取 Windows 宿主 IP，保持 {host}",
+        file=sys.stderr,
+    )
+    return host
 
 
 def _write_defaults_file(
@@ -94,39 +163,39 @@ def _build_mysql_command(
 
 
 def main() -> int:
-    default_host = _first_env("WH_DRG_MYSQL_HOST", "MYSQL_HOST") or "127.0.0.1"
-    default_port = _env_int("WH_DRG_MYSQL_PORT", "MYSQL_PORT") or 3306
-    default_user = _first_env("WH_DRG_MYSQL_USER", "MYSQL_USER") or "root"
-    default_password = _first_env("WH_DRG_MYSQL_PASSWORD", "MYSQL_PASSWORD") or "root"
-    default_database = _first_env("WH_DRG_MYSQL_DATABASE", "MYSQL_DATABASE") or "wh_drg"
+    default_host = _first_env("WH_DRG_MYSQL_HOST", "MYSQL_HOST") or DEFAULT_HOST
+    default_port = _env_int("WH_DRG_MYSQL_PORT", "MYSQL_PORT") or DEFAULT_PORT
+    default_user = _first_env("WH_DRG_MYSQL_USER", "MYSQL_USER") or DEFAULT_USER
+    default_pw = _first_env("WH_DRG_MYSQL_PASSWORD", "MYSQL_PASSWORD") or DEFAULT_PASSWORD
+    default_db = _first_env("WH_DRG_MYSQL_DATABASE", "MYSQL_DATABASE") or DEFAULT_DATABASE
 
     parser = argparse.ArgumentParser(
         prog="mysql_query.py",
-        description="Query MySQL (default: wh_drg@127.0.0.1:3306 root/root) via mysql client.",
+        description=f"Query MySQL ({DEFAULT_DATABASE}@{DEFAULT_HOST}:{DEFAULT_PORT}).",
     )
     parser.add_argument("--host", default=default_host)
     parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--user", default=default_user)
-    parser.add_argument("--password", default=default_password)
-    parser.add_argument("--database", default=default_database)
-    parser.add_argument("--mysql", dest="mysql_exe", default=None, help="Path to mysql executable.")
+    parser.add_argument("--password", default=default_pw)
+    parser.add_argument("--database", default=default_db)
+    parser.add_argument(
+        "--mysql", dest="mysql_exe", default=None,
+        help="Path to mysql executable.",
+    )
 
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument("--sql", default=None, help="SQL to execute.")
-    source_group.add_argument("--sql-file", default=None, help="Path to .sql file to execute.")
+    source_group.add_argument("--sql-file", default=None, help="Path to .sql file.")
     source_group.add_argument(
-        "--test",
-        action="store_true",
-        help="Run a simple connection test (SELECT 1, DATABASE()).",
+        "--test", action="store_true",
+        help="Run connection test (SELECT 1, DATABASE()).",
     )
-
     parser.add_argument("--no-header", action="store_true", help="Suppress column names.")
 
     args = parser.parse_args()
 
     sql: str | None = None
     sql_file: str | None = None
-
     if args.test:
         sql = "SELECT 1 AS ok, DATABASE() AS db;"
     elif args.sql is not None:
@@ -135,11 +204,11 @@ def main() -> int:
         sql_file = args.sql_file
 
     mysql_executable = _resolve_mysql_executable(args.mysql_exe)
+    resolved_host = _resolve_host(args.host, mysql_executable)
+
     defaults_file = _write_defaults_file(
-        host=args.host,
-        port=args.port,
-        user=args.user,
-        password=args.password,
+        host=resolved_host, port=args.port,
+        user=args.user, password=args.password,
     )
 
     try:

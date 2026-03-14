@@ -87,6 +87,21 @@
         ]
       }
     },
-    "commands": {}
+    "commands": {
+      "commit": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      }
+    }
   }
 }
