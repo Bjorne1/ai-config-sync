@@ -22,8 +22,9 @@
 > read this section FIRST to restore working state.
 
 - **Current milestone**: #N — <title>
-- **Current status**: IN_PROGRESS | BLOCKED | WAITING_HUMAN
+- **Current status**: IN_PROGRESS | WAITING_SUBTASK | WAITING_BATCH | BLOCKED_EXTERNAL | BLOCKED_SYSTEM
 - **Last completed**: #N-1 — <title>
+- **Current artifact**: `<TODO.csv | SUBTASKS.csv | batch/workers-output.csv | <path>>`
 - **Key context**: <1-2 sentences summarizing where we left off>
 - **Known issues**: <any unresolved problems>
 - **Next action**: <exact next step to take>
@@ -63,7 +64,7 @@
 - **Total milestones**: X
 - **Completed**: X
 - **Failed + recovered**: X
-- **Human interventions**: X
+- **External unblock events**: X
 - **Total retries**: X
 - **Files created**: X
 - **Files modified**: X

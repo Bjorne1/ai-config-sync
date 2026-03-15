@@ -1,6 +1,11 @@
 # Task Specification
 
-> Frozen after user approval. Changes require explicit re-approval.
+> Scope anchor for the task. Update only when goals or constraints change, and log the reason in PROGRESS.md.
+
+## Task Shape
+<!-- single-compact | single-full | epic | batch -->
+
+- **Shape**: `<auto>`
 
 ## Goals
 <!-- What are we building? Be specific and concrete. -->

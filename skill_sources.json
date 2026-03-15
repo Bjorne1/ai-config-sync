@@ -24,6 +24,10 @@
     "pdf": {
       "url": "https://github.com/anthropics/skills/tree/main/skills/pdf",
       "installedCommit": "1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563"
+    },
+    "taskmaster": {
+      "url": "https://github.com/lili-luo/aicoding-cookbook/tree/main/skills/codex/taskmaster",
+      "installedCommit": "b61bc5e94e856c489185ee920d70707973ba6387"
     }
   }
 }
