@@ -93,6 +93,14 @@
           "gemini",
           "antigravity"
         ]
+      },
+      "deploy-drg": {
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
       }
     },
     "commands": {
