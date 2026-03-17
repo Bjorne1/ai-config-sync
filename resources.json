@@ -85,6 +85,14 @@
           "gemini",
           "antigravity"
         ]
+      },
+      "deploy-dip": {
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
       }
     },
     "commands": {
