@@ -169,6 +169,55 @@ class AppServiceTests(unittest.TestCase):
         self.assertEqual(result["installedCommit"], "abc")
         installer.assert_called()
 
+    def test_sync_global_rules_uses_current_assignments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _create_config(root)
+            (root / ".codex").mkdir()
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "load_global_rules": lambda: {
+                        "profiles": [{"id": "rule-1", "name": "规则1", "content": "# sync"}],
+                        "assignments": {
+                            "windows": {"claude": None, "codex": "rule-1", "gemini": None},
+                            "wsl": {"claude": None, "codex": None, "gemini": None},
+                        },
+                    },
+                    "save_global_rules": lambda next_state: next_state,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                    "resolve_environment_targets": lambda *_args, **_kwargs: {
+                        "windows": {
+                            "enabled": True,
+                            "targets": config["environments"]["windows"]["targets"],
+                            "roots": {
+                                "claude": str(root / ".claude"),
+                                "codex": str(root / ".codex"),
+                                "gemini": str(root / ".gemini"),
+                                "antigravity": None,
+                            },
+                        },
+                        "wsl": {
+                            "enabled": False,
+                            "selectedDistro": None,
+                            "targets": {
+                                "skills": {tool_id: None for tool_id in ("claude", "codex", "gemini", "antigravity")},
+                                "commands": {tool_id: None for tool_id in ("claude", "codex", "gemini", "antigravity")},
+                            },
+                            "roots": {tool_id: None for tool_id in ("claude", "codex", "gemini", "antigravity")},
+                        },
+                    },
+                }
+            )
+
+            result = app_service.sync_global_rules([{"environmentId": "windows", "toolId": "codex"}])
+
+            self.assertTrue(result[0]["success"])
+            self.assertEqual((root / ".codex" / "AGENTS.md").read_text(encoding="utf-8"), "# sync")
+
 
 if __name__ == "__main__":
     unittest.main()

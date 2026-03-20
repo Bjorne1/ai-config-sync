@@ -49,6 +49,12 @@ class AppController(QObject):
         self.window.sync_all_requested.connect(self._sync_all)
         self.window.rescan_requested.connect(self._rescan_kind)
         self.window.sync_selected_requested.connect(self._sync_selected)
+        self.window.global_rule_refresh_requested.connect(
+            lambda: self.refresh_snapshot(busy_key="refreshGlobalRules")
+        )
+        self.window.global_rule_profiles_save_requested.connect(self._save_global_rule_profiles)
+        self.window.global_rule_assignments_save_requested.connect(self._save_global_rule_assignments)
+        self.window.global_rule_sync_requested.connect(self._sync_global_rules)
         self.window.reload_wsl_requested.connect(lambda: self.refresh_snapshot(busy_key="reloadWsl"))
         self.window.save_config_requested.connect(self._save_config)
         self.window.cleanup_requested.connect(self._cleanup)
@@ -68,6 +74,8 @@ class AppController(QObject):
             "config": config,
             "status": {**status, "config": config},
             "wslRuntime": wsl_runtime,
+            "globalRules": self.service.get_global_rules(),
+            "globalRuleStatus": self.service.get_global_rule_status(),
             "inventory": {
                 "skills": self.service.scan_resources("skills"),
                 "commands": self.service.scan_resources("commands"),
@@ -146,6 +154,47 @@ class AppController(QObject):
             lambda: self.service.save_config(patch),
             lambda _result: self.refresh_snapshot(False, "refreshAfterSaveConfig"),
         )
+
+    def _save_global_rule_profiles(self, payload: dict[str, object]) -> None:
+        self._run_task(
+            "saveGlobalRuleProfiles",
+            "保存全局规则版本",
+            lambda: self.service.save_global_rule_profiles(payload),
+            lambda _result: self.refresh_snapshot(False, "refreshAfterSaveGlobalRuleProfiles"),
+        )
+
+    def _save_global_rule_assignments(
+        self,
+        assignments: dict[str, dict[str, str | None]],
+    ) -> None:
+        self._run_task(
+            "saveGlobalRuleAssignments",
+            "保存全局规则映射",
+            lambda: self.service.save_global_rule_assignments(assignments),
+            lambda _result: self.refresh_snapshot(False, "refreshAfterSaveGlobalRuleAssignments"),
+        )
+
+    def _sync_global_rules(self, payload: object) -> None:
+        targets = self._parse_global_rule_targets(payload)
+
+        def task() -> object:
+            return self.service.sync_global_rules(targets)
+
+        self._run_task(
+            "syncGlobalRules",
+            "同步全局规则",
+            task,
+            self._after_global_rule_sync,
+        )
+
+    def _after_global_rule_sync(self, result: list[dict[str, object]]) -> None:
+        success = sum(1 for item in result if item.get("success"))
+        skipped = sum(1 for item in result if item.get("skipped"))
+        failed = len(result) - success - skipped
+        self.window.set_last_sync_summary(
+            f"全局规则 成功 {success} · 跳过 {skipped} · 失败 {failed}"
+        )
+        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRules")
 
     def _cleanup(self) -> None:
         self._run_task("cleanup", "执行清理", self.service.cleanup_invalid, self._after_cleanup)
@@ -365,3 +414,27 @@ class AppController(QObject):
             for name in request.names:
                 next_assignments.pop(name, None)
             self.service.replace_resource_map(kind, next_assignments)
+
+    def _parse_global_rule_targets(
+        self,
+        payload: object,
+    ) -> list[dict[str, str]] | None:
+        if payload is None:
+            return None
+        if not isinstance(payload, list):
+            raise ValueError("global rule sync payload must be a list or null.")
+        normalized: list[dict[str, str]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                raise ValueError("global rule sync target must be a dict.")
+            environment_id = str(item.get("environmentId") or "").strip()
+            tool_id = str(item.get("toolId") or "").strip()
+            if not environment_id or not tool_id:
+                raise ValueError("global rule sync target requires environmentId and toolId.")
+            normalized.append(
+                {
+                    "environmentId": environment_id,
+                    "toolId": tool_id,
+                }
+            )
+        return normalized

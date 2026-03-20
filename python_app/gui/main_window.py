@@ -16,6 +16,7 @@ from .dashboard import build_issue_rows, build_resource_rows, count_cleanup_cand
 from .event_filters import WheelBlocker
 from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
+from .pages.global_rule_page import GlobalRulePage
 from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
 from .pages.skill_upstream_page import SkillUpstreamPage
@@ -23,8 +24,17 @@ from .pages.tools_page import ToolsPage
 from .theme import build_stylesheet
 from .widgets import NavButton
 
-PAGE_KEYS = ("overview", "skills", "skillUpstreams", "commands", "config", "cleanup", "tools")
-PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "配置", "清理", "工具更新")
+PAGE_KEYS = (
+    "overview",
+    "skills",
+    "skillUpstreams",
+    "commands",
+    "globalRules",
+    "config",
+    "cleanup",
+    "tools",
+)
+PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "全局规则", "配置", "清理", "工具更新")
 
 
 class MainWindow(QMainWindow):
@@ -32,6 +42,10 @@ class MainWindow(QMainWindow):
     sync_all_requested = Signal()
     rescan_requested = Signal(str)
     sync_selected_requested = Signal(str, object)
+    global_rule_refresh_requested = Signal()
+    global_rule_profiles_save_requested = Signal(object)
+    global_rule_assignments_save_requested = Signal(object)
+    global_rule_sync_requested = Signal(object)
     reload_wsl_requested = Signal()
     save_config_requested = Signal(object)
     cleanup_requested = Signal()
@@ -141,6 +155,7 @@ class MainWindow(QMainWindow):
         self.skills_page = ResourcePage("skills")
         self.skill_upstream_page = SkillUpstreamPage()
         self.commands_page = ResourcePage("commands")
+        self.global_rule_page = GlobalRulePage()
         self.config_page = ConfigPage()
         self.cleanup_page = CleanupPage()
         self.tools_page = ToolsPage()
@@ -149,6 +164,7 @@ class MainWindow(QMainWindow):
             self.skills_page,
             self.skill_upstream_page,
             self.commands_page,
+            self.global_rule_page,
             self.config_page,
             self.cleanup_page,
             self.tools_page,
@@ -165,6 +181,14 @@ class MainWindow(QMainWindow):
         self.skill_upstream_page.upgrade_requested.connect(self.skill_upgrade_requested.emit)
         self.commands_page.rescan_requested.connect(self.rescan_requested.emit)
         self.commands_page.sync_requested.connect(self.sync_selected_requested.emit)
+        self.global_rule_page.refresh_requested.connect(self.global_rule_refresh_requested.emit)
+        self.global_rule_page.save_profiles_requested.connect(
+            self.global_rule_profiles_save_requested.emit
+        )
+        self.global_rule_page.save_assignments_requested.connect(
+            self.global_rule_assignments_save_requested.emit
+        )
+        self.global_rule_page.sync_requested.connect(self.global_rule_sync_requested.emit)
         self.config_page.reload_requested.connect(self.reload_wsl_requested.emit)
         self.config_page.save_requested.connect(self.save_config_requested.emit)
         self.cleanup_page.cleanup_requested.connect(self.cleanup_requested.emit)
@@ -264,6 +288,10 @@ class MainWindow(QMainWindow):
             self.snapshot.get("skillUpstreams", {}),
         )
         self.commands_page.set_rows(self._resource_rows("commands"))
+        self.global_rule_page.set_context(
+            self.snapshot.get("globalRules", {}),
+            self.snapshot.get("globalRuleStatus", []),
+        )
         self.config_page.set_context(self.snapshot["config"], self.snapshot["wslRuntime"])
         self.cleanup_page.set_context(cleanup_candidates, self.cleanup_result)
         self.tools_page.set_context(
@@ -290,6 +318,12 @@ class MainWindow(QMainWindow):
             self._busy("skillAdd") or self._busy("skillSetUrl") or self._busy("skillCheck") or self._busy("skillUpgrade")
         )
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
+        self.global_rule_page.set_busy(
+            self._busy("refreshGlobalRules"),
+            self._busy("saveGlobalRuleProfiles"),
+            self._busy("saveGlobalRuleAssignments"),
+            self._busy("syncGlobalRules"),
+        )
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
         self.cleanup_page.set_busy(self._busy("cleanup"))
         self.tools_page.set_busy(

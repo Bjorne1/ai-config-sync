@@ -50,10 +50,10 @@ def summarize_entries(
 ) -> tuple[str, str]:
     if not _has_assignments(configured_targets):
         if _has_assignments(detected_targets):
-            return "idle", "已检测到目标路径"
+            return "idle", "已检测到目标"
         return "idle", STATE_LABELS["idle"]
     if not entries:
-        return "partial", "已分配，等待同步"
+        return "partial", "已分配但尚无状态明细"
     ordered = sorted(entries, key=lambda entry: STATE_PRIORITY[entry["state"]])
     summary = ordered[0]
     message = summary.get("message") or STATE_LABELS[summary["state"]]

@@ -41,6 +41,14 @@ TOOL_LAYOUTS = MappingProxyType(
 TOOL_IDS = tuple(TOOL_LAYOUTS.keys())
 TOOL_KIND_IDS = ("skills", "commands")
 ENVIRONMENT_IDS = ("windows", "wsl")
+GLOBAL_RULE_TOOL_IDS = ("claude", "codex", "gemini")
+GLOBAL_RULE_FILE_NAMES = MappingProxyType(
+    {
+        "claude": "CLAUDE.md",
+        "codex": "AGENTS.md",
+        "gemini": "GEMINI.md",
+    }
+)
 DEFAULT_COMMAND_SUBFOLDER_SUPPORT = {
     "default": False,
     "tools": {"claude": True},

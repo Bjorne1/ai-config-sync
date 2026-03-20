@@ -20,11 +20,13 @@ STATE_COLORS = {
     "healthy": (SUCCESS, "#dcfce7"),
     "missing": (WARNING, "#fef3c7"),
     "outdated": (WARNING, "#ffedd5"),
+    "drifted": (ERROR, "#fee2e2"),
     "ahead": (ERROR, "#fee2e2"),
     "conflict": (ERROR, "#fee2e2"),
     "source_missing": (ERROR, "#fee2e2"),
     "tool_unavailable": (TEXT_MUTED, "#e2e8f0"),
     "environment_error": (ERROR, "#fee2e2"),
+    "profile_missing": (ERROR, "#fee2e2"),
     "partial": (INFO, "#dbeafe"),
     "idle": (TEXT_MUTED, "#e2e8f0"),
 }
@@ -208,7 +210,7 @@ def build_stylesheet() -> str:
         opacity: 0.55;
     }}
     /* 输入框 */
-    QLineEdit, QComboBox, QPlainTextEdit, QTableWidget {{
+    QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QListWidget {{
         background: {SURFACE};
         border: 1px solid {BORDER};
         border-radius: 8px;
@@ -221,8 +223,16 @@ def build_stylesheet() -> str:
     QLineEdit, QComboBox {{
         min-height: 22px;
     }}
-    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{
+    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QListWidget:focus {{
         border: 1.5px solid {ACCENT};
+    }}
+    QListWidget::item {{
+        padding: 8px 10px;
+        border-bottom: 1px solid rgba(184, 196, 209, 0.25);
+    }}
+    QListWidget::item:selected {{
+        background: {ACCENT_SOFT};
+        color: {TEXT_PRIMARY};
     }}
     /* 表格 */
     QTableWidget {{

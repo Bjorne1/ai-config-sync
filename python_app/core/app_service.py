@@ -9,6 +9,9 @@ from .environment_service import (
     list_wsl_distros,
     resolve_environment_targets,
 )
+from .global_rule_runtime_service import build_global_rule_statuses
+from .global_rule_state_service import load_global_rules, save_global_rules
+from .global_rule_sync_service import sync_global_rules as sync_global_rule_targets
 from .resource_operations import (
     build_resource_statuses,
     cleanup_invalid_resources,
@@ -71,9 +74,11 @@ class ServiceDependencies:
     get_wsl_home_dir: Callable = get_wsl_home_dir
     list_wsl_distros: Callable = list_wsl_distros
     load_config: Callable = load_config
+    load_global_rules: Callable = load_global_rules
     load_skill_upstreams: Callable = load_skill_upstreams
     resolve_environment_targets: Callable = resolve_environment_targets
     save_config: Callable = save_config
+    save_global_rules: Callable = save_global_rules
     save_skill_upstreams: Callable = save_skill_upstreams
     update_all_tools: Callable = update_all_tools
 
@@ -100,11 +105,42 @@ class AppService:
             "commands": build_resource_statuses(config, "commands", environments),
         }
 
+    def get_global_rules(self) -> dict[str, object]:
+        return self.deps.load_global_rules()
+
+    def get_global_rule_status(self) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        global_rules = self.deps.load_global_rules()
+        environments = build_environment_list(config, self._runtime_deps())
+        return build_global_rule_statuses(global_rules, environments)
+
     def get_wsl_distros(self) -> dict[str, object]:
         return build_wsl_runtime(self.deps.load_config(), self._runtime_deps())
 
     def save_config(self, patch: dict[str, object]) -> dict[str, object]:
         return _save_settings(self.deps.load_config(), patch)
+
+    def save_global_rule_profiles(self, payload: dict[str, object]) -> dict[str, object]:
+        current = self.deps.load_global_rules()
+        profiles = payload.get("profiles")
+        return self.deps.save_global_rules(
+            {
+                "profiles": profiles,
+                "assignments": current["assignments"],
+            }
+        )
+
+    def save_global_rule_assignments(
+        self,
+        assignments: dict[str, dict[str, str | None]],
+    ) -> dict[str, object]:
+        current = self.deps.load_global_rules()
+        return self.deps.save_global_rules(
+            {
+                "profiles": current["profiles"],
+                "assignments": assignments,
+            }
+        )
 
     def scan_resources(self, kind: str) -> list[dict[str, object]]:
         return scan_resources(self.deps.load_config(), kind)
@@ -293,6 +329,15 @@ class AppService:
         wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
         tools = config["updateTools"]
         return build_update_tool_statuses(tools, wsl_distro=wsl_distro)
+
+    def sync_global_rules(
+        self,
+        targets: list[dict[str, str]] | None = None,
+    ) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        global_rules = self.deps.load_global_rules()
+        environments = build_environment_list(config, self._runtime_deps())
+        return sync_global_rule_targets(global_rules, environments, targets)
 
     def _runtime_deps(self) -> dict[str, Callable]:
         return {

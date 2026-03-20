@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "profiles": [],
+  "assignments": {
+    "windows": {
+      "claude": null,
+      "codex": null,
+      "gemini": null
+    },
+    "wsl": {
+      "claude": null,
+      "codex": null,
+      "gemini": null
+    }
+  }
+}
