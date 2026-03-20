@@ -43,8 +43,8 @@ export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh" && nvm use v24.13.0 && \
 ### 第 3 步：压缩并传输
 
 ```bash
-cd /home/wcs/projects/work-project/cloud-his-web && \
-  tar -czf /mnt/e/deploy-project/micro_dip.tar.gz -C dist micro_dip && \
+cd /home/wcs/projects/work-project/cloud-his-web/dist/micro_dip && \
+  tar -czf /mnt/e/deploy-project/micro_dip.tar.gz . && \
   echo "传输完成"
 ```
 
