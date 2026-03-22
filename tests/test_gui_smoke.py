@@ -58,6 +58,7 @@ class GuiSmokeTests(unittest.TestCase):
                     "isDirectory": False,
                     "effectiveTargets": {"windows": ["codex"]},
                     "configuredTargets": {"windows": ["codex"]},
+                    "detectedTargets": {"windows": ["codex"]},
                     "entries": [],
                 }
             ]
@@ -73,6 +74,62 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertFalse(page.table.item(0, 4).data(LOGO_ACTIVE_ROLE))
         self.assertEqual(captured[0][0], "commands")
         self.assertEqual(captured[0][1]["action"], "remove")
+
+    def test_resource_page_dims_missing_target_even_when_assignment_exists(self) -> None:
+        page = ResourcePage("commands")
+        page.set_rows(
+            [
+                {
+                    "name": "brainstorming.md",
+                    "path": r"D:\wcs_project\ai-config-sync\commands\brainstorming.md",
+                    "isDirectory": False,
+                    "effectiveTargets": {"windows": ["codex"]},
+                    "configuredTargets": {"windows": ["codex"]},
+                    "detectedTargets": {},
+                    "entries": [
+                        {
+                            "environmentId": "windows",
+                            "toolId": "codex",
+                            "state": "missing",
+                            "message": "目标缺失",
+                            "targetExists": False,
+                        }
+                    ],
+                }
+            ]
+        )
+
+        item = page.table.item(0, 4)
+        self.assertFalse(item.data(LOGO_ACTIVE_ROLE))
+        self.assertIn("目标缺失", item.toolTip())
+
+    def test_resource_page_keeps_source_missing_target_dark_when_target_absent(self) -> None:
+        page = ResourcePage("skills")
+        page.set_rows(
+            [
+                {
+                    "name": "demo-skill",
+                    "path": r"D:\wcs_project\ai-config-sync\skills\demo-skill",
+                    "isDirectory": True,
+                    "effectiveTargets": {"windows": ["claude"]},
+                    "configuredTargets": {"windows": ["claude"]},
+                    "detectedTargets": {},
+                    "entries": [
+                        {
+                            "environmentId": "windows",
+                            "toolId": "claude",
+                            "state": "source_missing",
+                            "message": "源文件不存在",
+                            "targetExists": False,
+                        }
+                    ],
+                }
+            ]
+        )
+
+        item = page.table.item(0, 3)
+        self.assertFalse(item.data(LOGO_ACTIVE_ROLE))
+        self.assertIn("源文件不存在", item.toolTip())
 
     def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:
         page = ResourcePage("commands")

@@ -60,10 +60,8 @@
       },
       "deploy-dip": {
         "wsl": [
-          "claude",
           "codex",
-          "gemini",
-          "antigravity"
+          "gemini"
         ]
       }
     },

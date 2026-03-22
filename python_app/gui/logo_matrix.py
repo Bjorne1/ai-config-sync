@@ -80,11 +80,11 @@ def matrix_tooltip(
     entry: dict[str, object] | None,
 ) -> str:
     prefix = "Windows" if environment_id == "windows" else "WSL"
-    if active and entry:
+    if entry:
         return f"{prefix} / {tool_id} · {entry.get('message') or entry['state']}"
     if active:
-        return f"{prefix} / {tool_id} · 已检测到目标，点击移除"
-    return f"{prefix} / {tool_id} · 未同步，点击同步"
+        return f"{prefix} / {tool_id} · 已检测到目标"
+    return f"{prefix} / {tool_id} · 未同步"
 
 
 class ToolLogoDelegate(QStyledItemDelegate):

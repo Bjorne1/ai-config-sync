@@ -543,13 +543,24 @@ class ResourcePage(QWidget):
         environment_id: str,
         tool_id: str,
     ) -> None:
-        active = tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
         entry = find_matrix_entry(row, environment_id, tool_id)
-        state = entry["state"] if active and entry else ("detected" if active else "idle")
+        active = self._has_visible_target(row, environment_id, tool_id, entry)
+        state = entry["state"] if entry else ("detected" if active else "idle")
         item.setData(LOGO_ACTIVE_ROLE, active)
         item.setData(LOGO_STATE_ROLE, state)
         item.setData(LOGO_TOOL_ROLE, tool_id)
-        item.setToolTip(matrix_tooltip(environment_id, tool_id, active, entry if active else None))
+        item.setToolTip(matrix_tooltip(environment_id, tool_id, active, entry))
+
+    def _has_visible_target(
+        self,
+        row: dict[str, object],
+        environment_id: str,
+        tool_id: str,
+        entry: dict[str, object] | None,
+    ) -> bool:
+        if entry is not None:
+            return bool(entry.get("targetExists"))
+        return tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
 
     def _refresh_matrix_cell(
         self,

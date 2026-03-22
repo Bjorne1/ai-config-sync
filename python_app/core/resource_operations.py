@@ -89,6 +89,7 @@ def _build_states_for_targets(
         {
             **describe_target_state(mode, item["sourcePath"], target_paths[index]),
             "targetPath": target_paths[index],
+            "targetExists": file_sync.has_path(target_paths[index]),
         }
         for index, item in enumerate(items)
     ]
@@ -126,6 +127,7 @@ def _build_entries_for_resource(
                     "itemCount": len(items),
                     "targetPath": base_target,
                     "targets": target_paths,
+                    "targetExists": any(bool(state.get("targetExists")) for state in states),
                 }
             )
     return entries
