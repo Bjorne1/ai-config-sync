@@ -4,14 +4,30 @@
     {
       "id": "4e740febaaa5492bb9ddf4384bf96294",
       "name": "Custom-Codex-Win",
-      "file": "4e740febaaa5492bb9ddf4384bf96294.md",
-      "updatedAt": "2026-03-22T15:20:23"
+      "description": "INTJ、无ask question tool、Windows路径",
+      "file": "Custom-Codex-Win.md",
+      "updatedAt": "2026-03-22T16:00:36"
     },
     {
       "id": "4ffb55bb97d54a9fa4a0f6ab86920b34",
       "name": "Custom-Claude-Win",
-      "file": "4ffb55bb97d54a9fa4a0f6ab86920b34.md",
+      "description": "",
+      "file": "Custom-Claude-Win.md",
       "updatedAt": "2026-03-22T15:22:54"
+    },
+    {
+      "id": "a4de5f649dcb44c0b35fad0c50fb8df5",
+      "name": "Custom-Codex-WSL",
+      "description": "INTJ、无ask question tool、WSL路径、subagent",
+      "file": "Custom-Codex-WSL.md",
+      "updatedAt": "2026-03-22T16:02:53"
+    },
+    {
+      "id": "31df484bbd9649bab66a2387ce4217e1",
+      "name": "Custom-Claude-WSL",
+      "description": "",
+      "file": "Custom-Claude-WSL.md",
+      "updatedAt": "2026-03-22T16:06:27"
     }
   ],
   "assignments": {
@@ -21,8 +37,8 @@
       "gemini": null
     },
     "wsl": {
-      "claude": null,
-      "codex": null,
+      "claude": "31df484bbd9649bab66a2387ce4217e1",
+      "codex": "a4de5f649dcb44c0b35fad0c50fb8df5",
       "gemini": null
     }
   }

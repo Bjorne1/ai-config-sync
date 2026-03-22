@@ -1,6 +1,8 @@
+import os
 import sys
 from dataclasses import dataclass
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from .controller import AppController
@@ -8,6 +10,8 @@ from .core.app_service import AppService, create_app_service
 from .core.environment_service import assert_windows_host
 from .gui.main_window import MainWindow
 from .gui.theme import create_app_font
+
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
 
 
 @dataclass(frozen=True)
@@ -19,6 +23,9 @@ class BootstrapBundle:
 
 def create_application(service: AppService | None = None, start_controller: bool = True) -> BootstrapBundle:
     assert_windows_host()
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("AI Config Sync")
     app.setFont(create_app_font(10))

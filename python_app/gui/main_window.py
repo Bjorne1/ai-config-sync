@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -67,7 +68,13 @@ class MainWindow(QMainWindow):
         self.update_tool_statuses: dict[str, dict[str, object]] = {}
         self.busy: dict[str, bool] = {}
         self.setWindowTitle("AI Config Sync")
-        self.resize(1520, 960)
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            self.resize(min(1520, int(avail.width() * 0.85)),
+                        min(960, int(avail.height() * 0.85)))
+        else:
+            self.resize(1520, 960)
         self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
         self.setStyleSheet(build_stylesheet())
         self._build_ui()
@@ -77,15 +84,15 @@ class MainWindow(QMainWindow):
         root.setObjectName("appRoot")
         self.setCentralWidget(root)
         layout = QHBoxLayout(root)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(16)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         layout.addWidget(self._build_sidebar())
         layout.addWidget(self._build_workspace(), 1)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(248)
+        sidebar.setFixedWidth(220)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(14, 18, 14, 18)
         layout.setSpacing(0)
@@ -205,16 +212,11 @@ class MainWindow(QMainWindow):
         self._update_workspace_scroll_policy(key)
 
     def _update_workspace_scroll_policy(self, key: str) -> None:
-        scrollable_pages = {"overview", "config"}
-        enabled = key in scrollable_pages
-        policy = Qt.ScrollBarPolicy.ScrollBarAsNeeded if enabled else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        self.workspace_scroll.setVerticalScrollBarPolicy(policy)
-        self.workspace_scroll.setHorizontalScrollBarPolicy(policy)
-        self.workspace_scroll.verticalScrollBar().setEnabled(enabled)
-        self.workspace_scroll.horizontalScrollBar().setEnabled(enabled)
-        self._workspace_wheel_blocker.set_enabled(not enabled)
-        if not enabled:
-            self.workspace_scroll.verticalScrollBar().setValue(0)
+        self.workspace_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.workspace_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.workspace_scroll.verticalScrollBar().setEnabled(True)
+        self.workspace_scroll.horizontalScrollBar().setEnabled(True)
+        self._workspace_wheel_blocker.set_enabled(False)
 
     def set_snapshot(self, snapshot: dict[str, object]) -> None:
         self.snapshot = deepcopy(snapshot)
