@@ -151,8 +151,28 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn("Codex: 2", labels)
         self.assertIn("Gemini: 1", labels)
 
-    def test_global_rule_page_disables_sync_when_profile_dirty(self) -> None:
+    def test_global_rule_page_disables_sync_when_assignments_dirty(self) -> None:
         page = GlobalRulePage()
+        statuses = [
+            {
+                "environmentId": env,
+                "toolId": tool,
+                "targetFilePath": None,
+                "profileId": None,
+                "profileName": None,
+                "state": "idle",
+                "message": "未分配规则版本",
+            }
+            for env in ("windows", "wsl")
+            for tool in ("claude", "codex", "gemini")
+        ]
+        statuses[0].update(
+            targetFilePath=r"C:\Users\Administrator\.claude\CLAUDE.md",
+            profileId="rule-1",
+            profileName="规则1",
+            state="healthy",
+            message="已同步",
+        )
         page.set_context(
             {
                 "profiles": [
@@ -169,68 +189,14 @@ class GuiSmokeTests(unittest.TestCase):
                     "wsl": {"claude": None, "codex": None, "gemini": None},
                 },
             },
-            [
-                {
-                    "environmentId": "windows",
-                    "toolId": "claude",
-                    "targetFilePath": r"C:\Users\Administrator\.claude\CLAUDE.md",
-                    "profileId": "rule-1",
-                    "profileName": "规则1",
-                    "state": "healthy",
-                    "message": "已同步",
-                },
-                {
-                    "environmentId": "windows",
-                    "toolId": "codex",
-                    "targetFilePath": r"C:\Users\Administrator\.codex\AGENTS.md",
-                    "profileId": None,
-                    "profileName": None,
-                    "state": "idle",
-                    "message": "未分配规则版本",
-                },
-                {
-                    "environmentId": "windows",
-                    "toolId": "gemini",
-                    "targetFilePath": r"C:\Users\Administrator\.gemini\GEMINI.md",
-                    "profileId": None,
-                    "profileName": None,
-                    "state": "idle",
-                    "message": "未分配规则版本",
-                },
-                {
-                    "environmentId": "wsl",
-                    "toolId": "claude",
-                    "targetFilePath": None,
-                    "profileId": None,
-                    "profileName": None,
-                    "state": "environment_error",
-                    "message": "未发现 WSL 发行版",
-                },
-                {
-                    "environmentId": "wsl",
-                    "toolId": "codex",
-                    "targetFilePath": None,
-                    "profileId": None,
-                    "profileName": None,
-                    "state": "environment_error",
-                    "message": "未发现 WSL 发行版",
-                },
-                {
-                    "environmentId": "wsl",
-                    "toolId": "gemini",
-                    "targetFilePath": None,
-                    "profileId": None,
-                    "profileName": None,
-                    "state": "environment_error",
-                    "message": "未发现 WSL 发行版",
-                },
-            ],
+            statuses,
         )
+        self.assertTrue(page.sync_all_button.isEnabled())
 
-        page.name_input.setText("规则1-改")
+        page._handle_assignment_changed("windows", "codex", "rule-1")
 
-        self.assertTrue(page.sync_all_button.isEnabled() is False)
-        self.assertIn("规则版本有未保存修改", page.status_label.text())
+        self.assertFalse(page.sync_all_button.isEnabled())
+        self.assertIn("映射有未保存修改", page.status_label.text())
 
 
 if __name__ == "__main__":

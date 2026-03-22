@@ -1,10 +1,23 @@
 {
   "version": 1,
-  "profiles": [],
+  "profiles": [
+    {
+      "id": "4e740febaaa5492bb9ddf4384bf96294",
+      "name": "Custom-Codex-Win",
+      "file": "4e740febaaa5492bb9ddf4384bf96294.md",
+      "updatedAt": "2026-03-22T15:20:23"
+    },
+    {
+      "id": "4ffb55bb97d54a9fa4a0f6ab86920b34",
+      "name": "Custom-Claude-Win",
+      "file": "4ffb55bb97d54a9fa4a0f6ab86920b34.md",
+      "updatedAt": "2026-03-22T15:22:54"
+    }
+  ],
   "assignments": {
     "windows": {
-      "claude": null,
-      "codex": null,
+      "claude": "4ffb55bb97d54a9fa4a0f6ab86920b34",
+      "codex": "4e740febaaa5492bb9ddf4384bf96294",
       "gemini": null
     },
     "wsl": {
