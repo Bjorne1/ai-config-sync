@@ -16,20 +16,6 @@
           "antigravity"
         ]
       },
-      "taskmaster": {
-        "windows": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ],
-        "wsl": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ]
-      },
       "web-artifacts-builder": {
         "windows": [
           "claude",
@@ -104,7 +90,20 @@
       }
     },
     "commands": {
-      "commit": {
+      "brainstorming.md": {
+        "windows": [
+          "claude",
+          "codex",
+          "gemini",
+          "antigravity"
+        ],
+        "wsl": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      },
+      "commit.md": {
         "windows": [
           "claude",
           "codex",
