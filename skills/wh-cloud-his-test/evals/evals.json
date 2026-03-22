@@ -1,0 +1,23 @@
+{
+  "skill_name": "wh-cloud-his-test",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我真实启动 cloud_his 里的 ai-service，本地联调 /ai/dify/v1/chatFlow/block。我要验证两种图片上传方式：先调 /files/upload 再传 files，以及直接 multipart 传 images。不要只跑单测，要确认本地服务真的访问到了 Dify。",
+      "expected_output": "按 ai-service 的真实启动方式启动服务，准备可复用 token，发起两类真实请求，并明确说明是否真实访问到了 Dify 以及各调用的证据。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我测 drg-service 的一个接口，但要按本地真实启动方式来，不要直接假设它和 ai-service 一样走 dev 配置。先确认需不需要 prepare-drg-wsl-config，再启动服务、带 token 发请求，并说明是否真实连到了数据库。",
+      "expected_output": "先识别 drg-service 的特殊启动链路，再按 launch 配置等价启动，准备或复用 Redis token，发真实请求，并给出数据库连通与接口响应证据。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我怀疑 cloud_his 里某个 multipart 接口问题出在日志切面，不在业务层。你把目标微服务真实启动起来，实际发 multipart 请求，看异常是在 controller 前、业务层还是下游依赖，并把关键日志摘出来。",
+      "expected_output": "真实启动目标服务，发 multipart 请求，结合接口响应和日志定位失败层级，明确区分是否在 AOP、controller、service 或下游依赖。",
+      "files": []
+    }
+  ]
+}
