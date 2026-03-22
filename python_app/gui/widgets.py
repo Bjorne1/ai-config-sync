@@ -2,6 +2,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -144,6 +145,11 @@ class ActionButton(QPushButton):
     def set_busy(self, busy: bool) -> None:
         self.setDisabled(busy)
         self.setText("处理中..." if busy else self._base_label)
+
+
+class NoWheelComboBox(QComboBox):
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class HeaderBlock(QWidget):

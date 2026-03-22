@@ -28,17 +28,31 @@
       "description": "",
       "file": "Custom-Claude-WSL.md",
       "updatedAt": "2026-03-22T16:06:27"
+    },
+    {
+      "id": "4bc4d028ebab4a17b61788089d4b1eca",
+      "name": "Custom-Codex-Win-1.1",
+      "description": "优化输出语言，减少黑话",
+      "file": "Custom-Codex-Win-1.1.md",
+      "updatedAt": "2026-03-22T17:26:34"
+    },
+    {
+      "id": "13051453a75b46b89e0f5f7c0be5336b",
+      "name": "Custom-Codex-WSL-1.1",
+      "description": "优化黑话",
+      "file": "Custom-Codex-WSL-1.1.md",
+      "updatedAt": "2026-03-22T17:27:04"
     }
   ],
   "assignments": {
     "windows": {
       "claude": "4ffb55bb97d54a9fa4a0f6ab86920b34",
-      "codex": "4e740febaaa5492bb9ddf4384bf96294",
+      "codex": "4bc4d028ebab4a17b61788089d4b1eca",
       "gemini": null
     },
     "wsl": {
       "claude": "31df484bbd9649bab66a2387ce4217e1",
-      "codex": "a4de5f649dcb44c0b35fad0c50fb8df5",
+      "codex": "13051453a75b46b89e0f5f7c0be5336b",
       "gemini": null
     }
   }

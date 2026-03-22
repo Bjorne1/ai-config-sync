@@ -4,7 +4,6 @@ from uuid import uuid4
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QGridLayout,
@@ -22,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from ...core.tool_definitions import ENVIRONMENT_IDS, GLOBAL_RULE_TOOL_IDS
 from ..dashboard import serialize
-from ..widgets import ActionButton, BadgeLabel, CardFrame
+from ..widgets import ActionButton, BadgeLabel, CardFrame, NoWheelComboBox
 
 ENVIRONMENT_LABELS = {"windows": "Windows", "wsl": "WSL"}
 TOOL_LABELS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
@@ -117,7 +116,7 @@ class GlobalRuleTargetCard(CardFrame):
 
     def _build_ui(self) -> None:
         self.batch_checkbox = QCheckBox("加入批量同步")
-        self.profile_combo = QComboBox()
+        self.profile_combo = NoWheelComboBox()
         self.profile_combo.currentIndexChanged.connect(self._emit_assignment_changed)
         self.path_label = QLabel("--")
         self.path_label.setWordWrap(True)
@@ -235,7 +234,7 @@ class GlobalRulePage(QWidget):
             lambda: self.save_assignments_requested.emit(deepcopy(self._assignments))
         )
         self.sync_selected_button.clicked.connect(self._emit_sync_selected)
-        self.sync_all_button.clicked.connect(lambda: self.sync_requested.emit(None))
+        self.sync_all_button.clicked.connect(self._emit_sync_all)
         row.addWidget(self.status_label, 1)
         row.addWidget(self.refresh_button)
         row.addWidget(self.save_assignments_button)
@@ -278,7 +277,7 @@ class GlobalRulePage(QWidget):
         filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(8)
         filter_label = QLabel("平台筛选")
-        self.platform_filter = QComboBox()
+        self.platform_filter = NoWheelComboBox()
         self.platform_filter.addItems(["全部", "Windows", "WSL"])
         self.platform_filter.currentIndexChanged.connect(self._apply_platform_filter)
         filter_row.addWidget(filter_label)
@@ -514,7 +513,9 @@ class GlobalRulePage(QWidget):
         self._refresh_dirty_state()
 
     def _emit_sync_one(self, environment_id: str, tool_id: str) -> None:
-        self.sync_requested.emit([{"environmentId": environment_id, "toolId": tool_id}])
+        self.sync_requested.emit(
+            self._build_sync_payload([{"environmentId": environment_id, "toolId": tool_id}])
+        )
 
     def _emit_sync_selected(self) -> None:
         targets = []
@@ -524,10 +525,23 @@ class GlobalRulePage(QWidget):
         if not targets:
             QMessageBox.warning(self, "同步失败", "请先勾选至少一个目标。")
             return
-        self.sync_requested.emit(targets)
+        self.sync_requested.emit(self._build_sync_payload(targets))
+
+    def _emit_sync_all(self) -> None:
+        self.sync_requested.emit(self._build_sync_payload(None))
+
+    def _build_sync_payload(
+        self,
+        targets: list[dict[str, str]] | None,
+    ) -> object:
+        if not self._assignments_dirty():
+            return targets
+        return {
+            "targets": targets,
+            "assignments": deepcopy(self._assignments),
+        }
 
     def _refresh_target_cards(self) -> None:
-        sync_enabled = not self._assignments_dirty()
         for environment_id in ENVIRONMENT_IDS:
             for tool_id in GLOBAL_RULE_TOOL_IDS:
                 profile_id = self._assignments[environment_id][tool_id]
@@ -536,7 +550,7 @@ class GlobalRulePage(QWidget):
                     self._profiles,
                     status,
                     profile_id,
-                    sync_enabled,
+                    True,
                 )
         self._apply_platform_filter()
 
@@ -574,7 +588,7 @@ class GlobalRulePage(QWidget):
             return {
                 **status,
                 "state": "outdated",
-                "message": "目标映射已修改，保存后可同步",
+                "message": "目标映射已修改，同步时会自动保存",
             }
         return status or {
             "environmentId": environment_id,
@@ -594,17 +608,17 @@ class GlobalRulePage(QWidget):
             for tool_id in GLOBAL_RULE_TOOL_IDS
             if self._assignments.get(environment_id, {}).get(tool_id)
         )
-        sync_message = "映射有未保存修改" if assignments_dirty else "可直接同步"
+        sync_message = "映射有未保存修改，同步时会自动保存" if assignments_dirty else "可直接同步"
         self.status_label.setText(
             f"规则版本 {len(self._profiles)} 个 · 已分配目标 {referenced} 个 · {sync_message}"
         )
         self.assignment_meta.setText(
-            "映射已保存" if not assignments_dirty else "映射有未保存修改，请先保存映射。"
+            "映射已保存" if not assignments_dirty else "映射有未保存修改，点击同步会先自动保存。"
         )
         if not self._is_busy:
             self.save_assignments_button.setDisabled(not assignments_dirty)
-            self.sync_selected_button.setDisabled(assignments_dirty)
-            self.sync_all_button.setDisabled(assignments_dirty)
+            self.sync_selected_button.setDisabled(False)
+            self.sync_all_button.setDisabled(False)
 
     def _assignments_dirty(self) -> bool:
         return serialize(self._assignments) != serialize(self._original_assignments)

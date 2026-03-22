@@ -333,9 +333,17 @@ class AppService:
     def sync_global_rules(
         self,
         targets: list[dict[str, str]] | None = None,
+        assignments: dict[str, dict[str, str | None]] | None = None,
     ) -> list[dict[str, object]]:
         config = self.deps.load_config()
         global_rules = self.deps.load_global_rules()
+        if assignments is not None:
+            global_rules = self.deps.save_global_rules(
+                {
+                    "profiles": global_rules["profiles"],
+                    "assignments": assignments,
+                }
+            )
         environments = build_environment_list(config, self._runtime_deps())
         return sync_global_rule_targets(global_rules, environments, targets)
 

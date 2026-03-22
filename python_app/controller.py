@@ -175,10 +175,10 @@ class AppController(QObject):
         )
 
     def _sync_global_rules(self, payload: object) -> None:
-        targets = self._parse_global_rule_targets(payload)
+        sync_request = self._parse_global_rule_sync_payload(payload)
 
         def task() -> object:
-            return self.service.sync_global_rules(targets)
+            return self.service.sync_global_rules(sync_request["targets"], sync_request["assignments"])
 
         self._run_task(
             "syncGlobalRules",
@@ -414,6 +414,24 @@ class AppController(QObject):
             for name in request.names:
                 next_assignments.pop(name, None)
             self.service.replace_resource_map(kind, next_assignments)
+
+    def _parse_global_rule_sync_payload(
+        self,
+        payload: object,
+    ) -> dict[str, object]:
+        if isinstance(payload, dict):
+            raw_targets = payload.get("targets")
+            raw_assignments = payload.get("assignments")
+            if raw_assignments is not None and not isinstance(raw_assignments, dict):
+                raise ValueError("global rule sync assignments must be a dict or null.")
+            return {
+                "targets": self._parse_global_rule_targets(raw_targets),
+                "assignments": raw_assignments,
+            }
+        return {
+            "targets": self._parse_global_rule_targets(payload),
+            "assignments": None,
+        }
 
     def _parse_global_rule_targets(
         self,

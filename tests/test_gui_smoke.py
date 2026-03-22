@@ -242,8 +242,10 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn("Codex: 2", labels)
         self.assertIn("Gemini: 1", labels)
 
-    def test_global_rule_page_disables_sync_when_assignments_dirty(self) -> None:
+    def test_global_rule_page_keeps_sync_enabled_and_sends_assignments_when_dirty(self) -> None:
         page = GlobalRulePage()
+        captured: list[object] = []
+        page.sync_requested.connect(captured.append)
         statuses = [
             {
                 "environmentId": env,
@@ -286,8 +288,21 @@ class GuiSmokeTests(unittest.TestCase):
 
         page._handle_assignment_changed("windows", "codex", "rule-1")
 
-        self.assertFalse(page.sync_all_button.isEnabled())
-        self.assertIn("映射有未保存修改", page.status_label.text())
+        self.assertTrue(page.sync_all_button.isEnabled())
+        self.assertIn("同步时会自动保存", page.status_label.text())
+
+        page._emit_sync_one("windows", "codex")
+
+        self.assertEqual(
+            captured[0],
+            {
+                "targets": [{"environmentId": "windows", "toolId": "codex"}],
+                "assignments": {
+                    "windows": {"claude": "rule-1", "codex": "rule-1", "gemini": None},
+                    "wsl": {"claude": None, "codex": None, "gemini": None},
+                },
+            },
+        )
 
 
 if __name__ == "__main__":
