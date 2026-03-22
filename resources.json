@@ -44,20 +44,6 @@
           "antigravity"
         ]
       },
-      "wh-drg-mysql": {
-        "windows": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ],
-        "wsl": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ]
-      },
       "xlsx": {
         "windows": [
           "claude",
@@ -73,14 +59,6 @@
         ]
       },
       "deploy-dip": {
-        "wsl": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ]
-      },
-      "deploy-drg": {
         "wsl": [
           "claude",
           "codex",
