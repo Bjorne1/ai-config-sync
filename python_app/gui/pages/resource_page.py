@@ -454,7 +454,11 @@ class ResourcePage(QWidget):
         return {name: {"windows": tools, "wsl": tools} for name in names}
 
     def _is_upgradeable_row(self, row: dict[str, object]) -> bool:
-        return any(entry.get("state") in {"missing", "outdated"} for entry in row.get("entries", []))
+        entries = row.get("entries", [])
+        if any(entry.get("state") == "outdated" for entry in entries):
+            return True
+        has_visible_target = any(bool(entry.get("targetExists")) for entry in entries)
+        return has_visible_target and any(entry.get("state") == "missing" for entry in entries)
 
     def _upgradeable_names(self) -> list[str]:
         names: list[str] = []

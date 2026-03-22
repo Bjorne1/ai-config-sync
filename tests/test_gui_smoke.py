@@ -102,6 +102,7 @@ class GuiSmokeTests(unittest.TestCase):
         item = page.table.item(0, 4)
         self.assertFalse(item.data(LOGO_ACTIVE_ROLE))
         self.assertIn("目标缺失", item.toolTip())
+        self.assertEqual(page.table.item(0, 11).text(), "")
 
     def test_resource_page_keeps_source_missing_target_dark_when_target_absent(self) -> None:
         page = ResourcePage("skills")
@@ -130,6 +131,39 @@ class GuiSmokeTests(unittest.TestCase):
         item = page.table.item(0, 3)
         self.assertFalse(item.data(LOGO_ACTIVE_ROLE))
         self.assertIn("源文件不存在", item.toolTip())
+
+    def test_resource_page_shows_upgrade_when_partially_missing_with_existing_target(self) -> None:
+        page = ResourcePage("skills")
+        page.set_rows(
+            [
+                {
+                    "name": "demo-skill",
+                    "path": r"D:\wcs_project\ai-config-sync\skills\demo-skill",
+                    "isDirectory": True,
+                    "effectiveTargets": {"windows": ["claude", "codex"]},
+                    "configuredTargets": {"windows": ["claude", "codex"]},
+                    "detectedTargets": {"windows": ["claude"]},
+                    "entries": [
+                        {
+                            "environmentId": "windows",
+                            "toolId": "claude",
+                            "state": "healthy",
+                            "message": "已同步",
+                            "targetExists": True,
+                        },
+                        {
+                            "environmentId": "windows",
+                            "toolId": "codex",
+                            "state": "missing",
+                            "message": "目标缺失",
+                            "targetExists": False,
+                        },
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(page.table.item(0, 11).text(), "升级")
 
     def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:
         page = ResourcePage("commands")
