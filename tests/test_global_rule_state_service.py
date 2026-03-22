@@ -45,8 +45,11 @@ class GlobalRuleStateServiceTests(unittest.TestCase):
                 profile_dir=root / "profiles",
             )
 
-            self.assertEqual(state["profiles"][0]["file"], "rule-1.md")
-            self.assertEqual((root / "profiles" / "rule-1.md").read_text(encoding="utf-8"), "# Rule 1\n")
+            self.assertEqual(state["profiles"][0]["file"], "全局规则 1.md")
+            self.assertEqual(
+                (root / "profiles" / "全局规则 1.md").read_text(encoding="utf-8"),
+                "# Rule 1\n",
+            )
             manifest = json.loads((root / "global_rules.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["assignments"]["windows"]["claude"], "rule-1")
 
@@ -61,7 +64,7 @@ class GlobalRuleStateServiceTests(unittest.TestCase):
                             {
                                 "id": "rule-1",
                                 "name": "全局规则 1",
-                                "file": "rule-1.md",
+                                "file": "全局规则 1.md",
                                 "updatedAt": "2026-03-20T00:00:00",
                             }
                         ],
@@ -78,6 +81,77 @@ class GlobalRuleStateServiceTests(unittest.TestCase):
                     state_file=root / "global_rules.json",
                     profile_dir=root / "profiles",
                 )
+
+    def test_save_global_rules_rejects_duplicate_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "存在重复的规则版本名称"):
+                save_global_rules(
+                    {
+                        "profiles": [
+                            {"id": "a", "name": "Same Name", "content": ""},
+                            {"id": "b", "name": "Same Name", "content": ""},
+                        ],
+                        "assignments": create_default_global_rule_assignments(),
+                    },
+                    state_file=root / "global_rules.json",
+                    profile_dir=root / "profiles",
+                )
+
+    def test_save_global_rules_renames_file_when_name_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            save_global_rules(
+                {
+                    "profiles": [
+                        {"id": "r1", "name": "OldName", "content": "hello"},
+                    ],
+                    "assignments": create_default_global_rule_assignments(),
+                },
+                state_file=root / "global_rules.json",
+                profile_dir=root / "profiles",
+            )
+            self.assertTrue((root / "profiles" / "OldName.md").exists())
+
+            state = save_global_rules(
+                {
+                    "profiles": [
+                        {"id": "r1", "name": "NewName", "content": "hello"},
+                    ],
+                    "assignments": create_default_global_rule_assignments(),
+                },
+                state_file=root / "global_rules.json",
+                profile_dir=root / "profiles",
+            )
+
+            self.assertTrue((root / "profiles" / "NewName.md").exists())
+            self.assertFalse((root / "profiles" / "OldName.md").exists())
+            self.assertEqual(state["profiles"][0]["file"], "NewName.md")
+
+    def test_save_global_rules_persists_description(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            state = save_global_rules(
+                {
+                    "profiles": [
+                        {
+                            "id": "r1",
+                            "name": "WithDesc",
+                            "description": "A test description",
+                            "content": "body",
+                        },
+                    ],
+                    "assignments": create_default_global_rule_assignments(),
+                },
+                state_file=root / "global_rules.json",
+                profile_dir=root / "profiles",
+            )
+
+            self.assertEqual(state["profiles"][0]["description"], "A test description")
+            manifest = json.loads((root / "global_rules.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest["profiles"][0]["description"], "A test description",
+            )
 
 
 if __name__ == "__main__":

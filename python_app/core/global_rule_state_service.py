@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GLOBAL_RULE_STATE_FILE = PROJECT_ROOT / "global_rules.json"
 DEFAULT_GLOBAL_RULE_PROFILE_DIR = PROJECT_ROOT / "agents" / "global-rules" / "profiles"
 GLOBAL_RULE_STATE_VERSION = 1
+
+_ILLEGAL_CHARS_RE = re.compile(r'[/\\:*?"<>|]')
 
 
 def create_default_global_rule_assignments() -> dict[str, dict[str, str | None]]:
@@ -41,8 +44,13 @@ def _normalize_profile_reference(value: object) -> str | None:
     return profile_id or None
 
 
-def _build_profile_file_name(profile_id: str) -> str:
-    return f"{profile_id}.md"
+def _sanitize_file_name(name: str) -> str:
+    sanitized = _ILLEGAL_CHARS_RE.sub("_", name).strip(" .")
+    return sanitized or "_unnamed"
+
+
+def _build_profile_file_name(name: str) -> str:
+    return f"{_sanitize_file_name(name)}.md"
 
 
 def _normalize_profile_manifest(raw_profile: object) -> dict[str, str]:
@@ -50,6 +58,7 @@ def _normalize_profile_manifest(raw_profile: object) -> dict[str, str]:
         raise ValueError("规则版本必须是 object。")
     profile_id = str(raw_profile.get("id") or "").strip()
     name = str(raw_profile.get("name") or "").strip()
+    description = str(raw_profile.get("description") or "").strip()
     updated_at = str(raw_profile.get("updatedAt") or "").strip()
     if not profile_id:
         raise ValueError("规则版本缺少 id。")
@@ -58,7 +67,8 @@ def _normalize_profile_manifest(raw_profile: object) -> dict[str, str]:
     return {
         "id": profile_id,
         "name": name,
-        "file": _build_profile_file_name(profile_id),
+        "description": description,
+        "file": _build_profile_file_name(name),
         "updatedAt": updated_at,
     }
 
@@ -68,6 +78,7 @@ def _normalize_profile_payload(raw_profile: object) -> dict[str, str]:
         raise ValueError("规则版本必须是 object。")
     profile_id = str(raw_profile.get("id") or "").strip()
     name = str(raw_profile.get("name") or "").strip()
+    description = str(raw_profile.get("description") or "").strip()
     content = str(raw_profile.get("content") or "")
     updated_at = str(raw_profile.get("updatedAt") or "").strip()
     if not profile_id:
@@ -77,7 +88,8 @@ def _normalize_profile_payload(raw_profile: object) -> dict[str, str]:
     return {
         "id": profile_id,
         "name": name,
-        "file": _build_profile_file_name(profile_id),
+        "description": description,
+        "file": _build_profile_file_name(name),
         "updatedAt": updated_at,
         "content": content,
     }
@@ -182,9 +194,13 @@ def save_global_rules(
     profile_ids = {profile["id"] for profile in normalized_profiles}
     if len(profile_ids) != len(normalized_profiles):
         raise ValueError("存在重复的规则版本 id。")
+    profile_names = {profile["name"] for profile in normalized_profiles}
+    if len(profile_names) != len(normalized_profiles):
+        raise ValueError("存在重复的规则版本名称。")
     assignments = _normalize_assignments(state.get("assignments"))
     _validate_assignments(assignments, profile_ids)
     manifest_profiles: list[dict[str, str]] = []
+    new_files: set[str] = set()
     for profile in normalized_profiles:
         existing = existing_by_id.get(profile["id"])
         existing_content = None
@@ -195,22 +211,24 @@ def save_global_rules(
         changed = (
             existing is None
             or existing["name"] != profile["name"]
+            or existing["description"] != profile["description"]
             or existing_content != profile["content"]
         )
         updated_at = existing["updatedAt"] if existing and not changed else _timestamp_now()
-        file_name = _build_profile_file_name(profile["id"])
+        file_name = profile["file"]
+        new_files.add(file_name)
         (resolved_profile_dir / file_name).write_text(profile["content"], encoding="utf-8")
         manifest_profiles.append(
             {
                 "id": profile["id"],
                 "name": profile["name"],
+                "description": profile["description"],
                 "file": file_name,
                 "updatedAt": updated_at,
             }
         )
-    removed_files = {
-        profile["file"] for profile in existing_profiles if profile["id"] not in profile_ids
-    }
+    old_files = {profile["file"] for profile in existing_profiles}
+    removed_files = old_files - new_files
     for file_name in removed_files:
         file_path = resolved_profile_dir / file_name
         if file_path.exists():

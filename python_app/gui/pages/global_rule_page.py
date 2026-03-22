@@ -42,20 +42,29 @@ class GlobalRuleEditDialog(QDialog):
     def __init__(
         self,
         name: str = "",
+        description: str = "",
         content: str = "",
         title: str = "新建规则",
+        existing_names: set[str] = (),
+        original_name: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(600, 480)
         self.resize(720, 560)
+        self._existing_names = set(existing_names)
+        self._original_name = original_name
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         name_label = QLabel("规则名称")
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("请输入规则名称")
         self.name_input.setText(name)
+        desc_label = QLabel("规则描述")
+        self.desc_input = QLineEdit()
+        self.desc_input.setPlaceholderText("可选，简要描述规则用途")
+        self.desc_input.setText(description)
         content_label = QLabel("规则内容（Markdown 纯文本）")
         self.content_editor = QPlainTextEdit()
         self.content_editor.setPlaceholderText("请输入规则内容…")
@@ -67,18 +76,28 @@ class GlobalRuleEditDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(name_label)
         layout.addWidget(self.name_input)
+        layout.addWidget(desc_label)
+        layout.addWidget(self.desc_input)
         layout.addWidget(content_label)
         layout.addWidget(self.content_editor, 1)
         layout.addWidget(self.button_box)
 
     def _validate_and_accept(self) -> None:
-        if not self.name_input.text().strip():
+        name = self.name_input.text().strip()
+        if not name:
             QMessageBox.warning(self, "验证失败", "规则名称不能为空。")
+            return
+        conflict_names = self._existing_names - {self._original_name}
+        if name in conflict_names:
+            QMessageBox.warning(self, "验证失败", f"规则名称「{name}」已存在，请使用其他名称。")
             return
         self.accept()
 
     def get_name(self) -> str:
         return self.name_input.text().strip()
+
+    def get_description(self) -> str:
+        return self.desc_input.text().strip()
 
     def get_content(self) -> str:
         return self.content_editor.toPlainText()
@@ -255,6 +274,17 @@ class GlobalRulePage(QWidget):
 
     def _build_assignment_card(self) -> QWidget:
         card = CardFrame("目标映射与状态", "为每个目标选择规则版本，并按目标或批量同步。")
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(8)
+        filter_label = QLabel("平台筛选")
+        self.platform_filter = QComboBox()
+        self.platform_filter.addItems(["全部", "Windows", "WSL"])
+        self.platform_filter.currentIndexChanged.connect(self._apply_platform_filter)
+        filter_row.addWidget(filter_label)
+        filter_row.addWidget(self.platform_filter)
+        filter_row.addStretch(1)
+        card.body_layout.addLayout(filter_row)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
@@ -336,7 +366,11 @@ class GlobalRulePage(QWidget):
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, str(profile["id"]))
             updated_at = str(profile.get("updatedAt") or "未保存")
-            item.setToolTip(f"{name}\n更新时间：{updated_at}")
+            description = str(profile.get("description") or "")
+            tip_lines = [name, f"更新时间：{updated_at}"]
+            if description:
+                tip_lines.insert(1, f"描述：{description}")
+            item.setToolTip("\n".join(tip_lines))
             self.profile_list.addItem(item)
         self.profile_list.blockSignals(False)
 
@@ -358,7 +392,10 @@ class GlobalRulePage(QWidget):
         self._selected_profile_id = current.data(Qt.ItemDataRole.UserRole) if current else None
 
     def _create_profile(self) -> None:
-        dialog = GlobalRuleEditDialog(title="新建规则", parent=self)
+        existing_names = {str(p.get("name") or "") for p in self._profiles}
+        dialog = GlobalRuleEditDialog(
+            title="新建规则", existing_names=existing_names, parent=self,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         profile_id = uuid4().hex
@@ -366,6 +403,7 @@ class GlobalRulePage(QWidget):
             {
                 "id": profile_id,
                 "name": dialog.get_name(),
+                "description": dialog.get_description(),
                 "file": f"{profile_id}.md",
                 "updatedAt": "",
                 "content": dialog.get_content(),
@@ -379,15 +417,21 @@ class GlobalRulePage(QWidget):
         if not profile:
             QMessageBox.warning(self, "编辑失败", "请先选择一个规则版本。")
             return
+        original_name = str(profile.get("name") or "")
+        existing_names = {str(p.get("name") or "") for p in self._profiles}
         dialog = GlobalRuleEditDialog(
-            name=str(profile.get("name") or ""),
+            name=original_name,
+            description=str(profile.get("description") or ""),
             content=str(profile.get("content") or ""),
             title="编辑规则",
+            existing_names=existing_names,
+            original_name=original_name,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         profile["name"] = dialog.get_name()
+        profile["description"] = dialog.get_description()
         profile["content"] = dialog.get_content()
         self._emit_save_profiles()
 
@@ -396,10 +440,13 @@ class GlobalRulePage(QWidget):
         if not profile:
             QMessageBox.warning(self, "复制失败", "请先选择一个规则版本。")
             return
+        existing_names = {str(p.get("name") or "") for p in self._profiles}
         dialog = GlobalRuleEditDialog(
             name=f"{profile.get('name') or '未命名规则'} 副本",
+            description=str(profile.get("description") or ""),
             content=str(profile.get("content") or ""),
             title="复制规则",
+            existing_names=existing_names,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -409,6 +456,7 @@ class GlobalRulePage(QWidget):
             {
                 "id": profile_id,
                 "name": dialog.get_name(),
+                "description": dialog.get_description(),
                 "file": f"{profile_id}.md",
                 "updatedAt": "",
                 "content": dialog.get_content(),
@@ -446,6 +494,7 @@ class GlobalRulePage(QWidget):
                 {
                     "id": str(profile["id"]),
                     "name": str(profile.get("name") or ""),
+                    "description": str(profile.get("description") or ""),
                     "content": str(profile.get("content") or ""),
                     "updatedAt": str(profile.get("updatedAt") or ""),
                 }
@@ -489,6 +538,16 @@ class GlobalRulePage(QWidget):
                     profile_id,
                     sync_enabled,
                 )
+        self._apply_platform_filter()
+
+    def _apply_platform_filter(self) -> None:
+        platform_map = {0: None, 1: "windows", 2: "wsl"}
+        selected = platform_map.get(self.platform_filter.currentIndex())
+        for (environment_id, tool_id), card in self._target_cards.items():
+            visible = selected is None or environment_id == selected
+            card.setVisible(visible)
+            if not visible:
+                card.set_checked(False)
 
     def _display_status(self, environment_id: str, tool_id: str) -> dict[str, object]:
         status = deepcopy(self._statuses.get((environment_id, tool_id), {}))
