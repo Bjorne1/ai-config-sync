@@ -545,7 +545,7 @@ class ResourcePage(QWidget):
     ) -> None:
         active = tool_id in self.assignments.get(row["name"], {}).get(environment_id, [])
         entry = find_matrix_entry(row, environment_id, tool_id)
-        state = entry["state"] if active and entry else ("healthy" if active else "idle")
+        state = entry["state"] if active and entry else ("detected" if active else "idle")
         item.setData(LOGO_ACTIVE_ROLE, active)
         item.setData(LOGO_STATE_ROLE, state)
         item.setData(LOGO_TOOL_ROLE, tool_id)

@@ -13,6 +13,7 @@ STATE_LABELS = {
     "environment_error": "环境异常",
     "partial": "部分完成",
     "idle": "未分配",
+    "detected": "已检测到残留",
 }
 STATE_PRIORITY = {
     "ahead": 0,
@@ -25,6 +26,7 @@ STATE_PRIORITY = {
     "partial": 7,
     "healthy": 8,
     "idle": 9,
+    "detected": 6,
 }
 
 

@@ -29,6 +29,7 @@ STATE_COLORS = {
     "profile_missing": (ERROR, "#fee2e2"),
     "partial": (INFO, "#dbeafe"),
     "idle": (TEXT_MUTED, "#e2e8f0"),
+    "detected": (WARNING, "#fef3c7"),
 }
 
 
