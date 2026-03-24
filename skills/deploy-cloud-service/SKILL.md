@@ -53,7 +53,7 @@ description: Use when working in /home/wcs/projects/work-project/cloud_his and t
 ## 约束
 
 - 始终使用 JDK8：`/home/wcs/.local/opt/jdk8`
-- Maven 命令统一为：`mvn clean package -pl <module> -am -DskipTests`
+- Maven 命令统一为：`mvn clean package -pl <module> -am -DskipTests=true -Dmaven.test.skip=true`
 - 构建成功后必须复制 jar 到：`/mnt/e/deploy-project/`
 - 回答用户时要带验证证据：
   - 实际部署的服务名

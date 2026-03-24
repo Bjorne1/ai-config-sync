@@ -228,7 +228,8 @@ main() {
     mvn clean package
     -pl "${module_path}"
     -am
-    -DskipTests
+    -DskipTests=true
+    -Dmaven.test.skip=true
   )
 
   print_execution_plan \
