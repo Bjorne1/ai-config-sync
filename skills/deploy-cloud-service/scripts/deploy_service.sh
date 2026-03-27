@@ -4,6 +4,7 @@ set -euo pipefail
 readonly PROJECT_ROOT="/home/wcs/projects/work-project/cloud_his"
 readonly JAVA_HOME_DIR="/home/wcs/.local/opt/jdk8"
 readonly DEPLOY_DIR="/mnt/e/deploy-project"
+readonly DETECT_WORKSPACE_SCRIPT="${PROJECT_ROOT}/.agents/skills/detect-vscode-workspace/scripts/detect_current_workspace.sh"
 readonly DRY_RUN_ENABLED="1"
 readonly DRY_RUN_DISABLED="0"
 
@@ -20,8 +21,9 @@ Service aliases:
 
 Resolution order:
   1. Explicit service argument
-  2. Current working directory under wh-modules/<service>
-  3. --workspace-file mapping, only when caller already knows the active workspace file
+  2. Explicit --workspace-file mapping
+  3. Current VSCode workspace bound to this Codex session
+  4. Current working directory under wh-modules/<service>
 
 This script does not scan repository *.code-workspace files.
 EOF
@@ -55,15 +57,11 @@ normalize_service_name() {
 }
 
 service_from_workspace() {
-  local workspace_name
+  local workspace_name service_name
   workspace_name="$(basename "$1")"
-  case "${workspace_name}" in
-    ai-service-dev.code-workspace) printf '%s\n' "ai-service" ;;
-    drg-service-dev.code-workspace) printf '%s\n' "drg-service" ;;
-    emr-service-dev.code-workspace) printf '%s\n' "emr-service" ;;
-    his-service-dev.code-workspace) printf '%s\n' "his-service" ;;
-    *) return 1 ;;
-  esac
+  service_name="${workspace_name%-dev.code-workspace}"
+  [[ "${service_name}" != "${workspace_name}" ]] || return 1
+  normalize_service_name "${service_name}"
 }
 
 service_from_cwd() {
@@ -88,6 +86,11 @@ service_from_cwd() {
   esac
 }
 
+detect_current_workspace_file() {
+  [[ -f "${DETECT_WORKSPACE_SCRIPT}" ]] || return 1
+  bash "${DETECT_WORKSPACE_SCRIPT}" --path-only 2>/dev/null
+}
+
 service_config() {
   case "${1}" in
     ai-service) printf '%s\n' "wh-modules/ai-service|ai-service.jar" ;;
@@ -106,6 +109,9 @@ resolve_service() {
   local explicit_service="$1"
   local workspace_file="$2"
   local current_dir="$3"
+  local detected_workspace_file=""
+  local detected_service=""
+  local cwd_service=""
 
   if [[ -n "${explicit_service}" ]]; then
     normalize_service_name "${explicit_service}"
@@ -117,7 +123,29 @@ resolve_service() {
     return 0
   fi
 
-  service_from_cwd "${current_dir}"
+  detected_workspace_file="$(detect_current_workspace_file || true)"
+  if [[ -n "${detected_workspace_file}" ]]; then
+    detected_service="$(service_from_workspace "${detected_workspace_file}")" || return 1
+  fi
+
+  cwd_service="$(service_from_cwd "${current_dir}" || true)"
+
+  if [[ -n "${detected_service}" && -n "${cwd_service}" && "${detected_service}" != "${cwd_service}" ]]; then
+    echo "Current VSCode workspace (${detected_service}) and current directory (${cwd_service}) do not match. Specify the service explicitly." >&2
+    return 1
+  fi
+
+  if [[ -n "${detected_service}" ]]; then
+    printf '%s\n' "${detected_service}"
+    return 0
+  fi
+
+  if [[ -n "${cwd_service}" ]]; then
+    printf '%s\n' "${cwd_service}"
+    return 0
+  fi
+
+  return 1
 }
 
 parse_args() {
