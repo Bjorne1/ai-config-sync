@@ -3,7 +3,7 @@
   "skills": {
     "pua": {
       "url": "https://github.com/tanweai/pua/tree/main/skills/pua",
-      "installedCommit": "dc80f0c9ce58a1808b0ce6a5cb3d843d2041addf"
+      "installedCommit": "bb23af0da0c3b1b2ed56855d95cd65e059bfed8c"
     },
     "canvas-design": {
       "url": "https://github.com/anthropics/skills/tree/main/skills/canvas-design",

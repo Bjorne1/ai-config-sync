@@ -2,20 +2,6 @@
   "version": 1,
   "resources": {
     "skills": {
-      "pua": {
-        "windows": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ],
-        "wsl": [
-          "claude",
-          "codex",
-          "gemini",
-          "antigravity"
-        ]
-      },
       "web-artifacts-builder": {
         "windows": [
           "claude",
@@ -91,6 +77,14 @@
           "codex",
           "gemini",
           "antigravity"
+        ]
+      },
+      "PUA.md": {
+        "windows": [
+          "codex"
+        ],
+        "wsl": [
+          "codex"
         ]
       }
     }
