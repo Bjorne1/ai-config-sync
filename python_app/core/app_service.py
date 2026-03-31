@@ -306,20 +306,29 @@ class AppService:
         environments = build_environment_list(config, self._runtime_deps())
         return remove_configured_resources(config, kind, environments, names, assignments)
 
-    def update_tools(self) -> list[dict[str, object]]:
+    def update_tools(self, target_versions: dict[str, str] | None = None) -> list[dict[str, object]]:
         config = self.deps.load_config()
         wsl_runtime = build_wsl_runtime(config, self._runtime_deps())
         wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
-        return self.deps.update_all_tools(config["updateTools"], wsl_distro=wsl_distro)
+        return self.deps.update_all_tools(
+            config["updateTools"],
+            wsl_distro=wsl_distro,
+            target_versions=target_versions,
+        )
 
-    def update_tool(self, name: str) -> list[dict[str, object]]:
+    def update_tool(self, name: str, target_version: str | None = None) -> list[dict[str, object]]:
         config = self.deps.load_config()
         tools = config["updateTools"]
         if name not in tools:
             raise ValueError(f"未找到更新定义：{name}")
         wsl_runtime = build_wsl_runtime(config, self._runtime_deps())
         wsl_distro = wsl_runtime["selectedDistro"] if wsl_runtime.get("available") else None
-        return self.deps.update_all_tools({name: tools[name]}, wsl_distro=wsl_distro)
+        target_versions = {name: target_version} if target_version else None
+        return self.deps.update_all_tools(
+            {name: tools[name]},
+            wsl_distro=wsl_distro,
+            target_versions=target_versions,
+        )
 
     def get_update_tool_statuses(
         self,

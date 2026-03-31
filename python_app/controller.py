@@ -203,18 +203,25 @@ class AppController(QObject):
         self.window.set_cleanup_result(result)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterCleanup")
 
-    def _update_tools(self) -> None:
-        self._run_task("updateTools", "更新工具", self.service.update_tools, self._after_update_tools)
+    def _update_tools(self, payload: object) -> None:
+        target_versions = self._parse_target_versions(payload)
+        self._run_task(
+            "updateTools",
+            "更新工具",
+            lambda: self.service.update_tools(target_versions),
+            self._after_update_tools,
+        )
 
     def _after_update_tools(self, results: list[dict[str, object]]) -> None:
         self.window.set_tool_results(results)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterUpdateTools")
 
-    def _update_tool(self, name: str) -> None:
+    def _update_tool(self, name: str, target_version: object) -> None:
+        resolved_version = str(target_version or "").strip() or None
         self._run_task(
             "updateTool",
             f"更新工具：{name}",
-            lambda: self.service.update_tool(name),
+            lambda: self.service.update_tool(name, resolved_version),
             self._after_update_tools,
         )
 
@@ -432,6 +439,22 @@ class AppController(QObject):
             "targets": self._parse_global_rule_targets(payload),
             "assignments": None,
         }
+
+    def _parse_target_versions(self, payload: object) -> dict[str, str] | None:
+        if payload is None:
+            return None
+        if not isinstance(payload, dict):
+            raise ValueError("target versions payload must be a dict or null.")
+        normalized: dict[str, str] = {}
+        for name, version in payload.items():
+            if not isinstance(name, str):
+                raise ValueError("target version key must be a string.")
+            normalized_name = name.strip()
+            normalized_version = str(version or "").strip()
+            if not normalized_name or not normalized_version:
+                continue
+            normalized[normalized_name] = normalized_version
+        return normalized or None
 
     def _parse_global_rule_targets(
         self,

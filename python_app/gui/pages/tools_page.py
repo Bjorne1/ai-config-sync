@@ -66,8 +66,8 @@ class UpdateToolDefinitionDialog(QDialog):
 
 
 class ToolsPage(QWidget):
-    update_requested = Signal()
-    update_tool_requested = Signal(str)
+    update_requested = Signal(object)
+    update_tool_requested = Signal(str, object)
     definitions_save_requested = Signal(object)
 
     _PAGE_SPACING = 18
@@ -80,6 +80,7 @@ class ToolsPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._definitions: dict[str, dict[str, str]] = {}
+        self._version_selectors: dict[str, QComboBox] = {}
         self._update_buttons: list[ActionButton] = []
         self._edit_buttons: list[ActionButton] = []
         self._delete_buttons: list[ActionButton] = []
@@ -100,7 +101,7 @@ class ToolsPage(QWidget):
         self.definition_meta.setObjectName("muted")
         self.definition_meta.setWordWrap(True)
         self.run_button = ActionButton("一键更新", "primary")
-        self.run_button.clicked.connect(self.update_requested.emit)
+        self.run_button.clicked.connect(self._emit_update_all)
         self.new_button = ActionButton("新增", "secondary")
         self.new_button.clicked.connect(self._create_definition)
         self.action_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
@@ -121,10 +122,10 @@ class ToolsPage(QWidget):
         return self.definition_card
 
     def _build_definition_table(self) -> QTableWidget:
-        table = QTableWidget(0, 7)
-        table.setHorizontalHeaderLabels(("名称", "类型", "包名 / 命令", "Win版本", "WSL版本", "最新版本", "操作"))
+        table = QTableWidget(0, 8)
+        table.setHorizontalHeaderLabels(("名称", "类型", "包名 / 命令", "Win版本", "WSL版本", "最新版本", "目标版本", "操作"))
         table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        configure_table(table, stretch_columns=(2, 3, 4, 5))
+        configure_table(table, stretch_columns=(2, 3, 4, 5, 6))
         return table
 
     def _build_result_card(self) -> QWidget:
@@ -144,6 +145,7 @@ class ToolsPage(QWidget):
         statuses: dict[str, dict[str, object]],
     ) -> None:
         self._definitions = deepcopy(definitions)
+        self._version_selectors = {}
         self._update_buttons = []
         self._edit_buttons = []
         self._delete_buttons = []
@@ -151,14 +153,19 @@ class ToolsPage(QWidget):
         self.definition_meta.setText(f"共 {len(entries)} 个更新定义（npm / npx / custom）")
         self.definition_table.setRowCount(len(entries))
         for row_index, (name, definition) in enumerate(entries):
-            win_text, wsl_text, latest_text = self._definition_versions(name, definition, statuses)
+            win_text, wsl_text, latest_text, recent_versions = self._definition_versions(name, definition, statuses)
             for column, value in enumerate(
                 (name, definition["type"], self._definition_value(definition), win_text, wsl_text, latest_text)
             ):
                 item = QTableWidgetItem(str(value))
                 item.setToolTip(str(value))
                 self.definition_table.setItem(row_index, column, item)
-            self.definition_table.setCellWidget(row_index, 6, self._build_operation_cell(name))
+            self.definition_table.setCellWidget(
+                row_index,
+                6,
+                self._build_target_version_cell(name, definition, latest_text, recent_versions),
+            )
+            self.definition_table.setCellWidget(row_index, 7, self._build_operation_cell(name))
         self._sync_definition_table_height()
         self.result_table.setRowCount(len(results))
         for row_index, result in enumerate(results):
@@ -175,6 +182,8 @@ class ToolsPage(QWidget):
         self.run_button.set_busy(update_busy)
         self.new_button.setDisabled(update_busy or save_busy)
         disable_ops = update_busy or save_busy
+        for selector in self._version_selectors.values():
+            selector.setDisabled(disable_ops)
         for button in self._update_buttons:
             button.setDisabled(disable_ops)
         for button in self._edit_buttons:
@@ -194,7 +203,12 @@ class ToolsPage(QWidget):
         update_button = ActionButton("更新", "secondary")
         edit_button = ActionButton("编辑", "secondary")
         delete_button = ActionButton("删除", "danger")
-        update_button.clicked.connect(lambda _checked=False, tool_name=name: self.update_tool_requested.emit(tool_name))
+        update_button.clicked.connect(
+            lambda _checked=False, tool_name=name: self.update_tool_requested.emit(
+                tool_name,
+                self._selected_version_for(tool_name),
+            )
+        )
         edit_button.clicked.connect(lambda _checked=False, tool_name=name: self._edit_definition(tool_name))
         delete_button.clicked.connect(lambda _checked=False, tool_name=name: self._delete_definition(tool_name))
         layout.addWidget(update_button)
@@ -210,15 +224,67 @@ class ToolsPage(QWidget):
         name: str,
         definition: dict[str, str],
         statuses: dict[str, dict[str, object]],
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, str, list[str]]:
         if definition.get("type") != "npm":
-            return ("n/a", "n/a", "n/a")
+            return ("n/a", "n/a", "n/a", [])
         status = statuses.get(name, {})
         wsl_enabled = bool(status.get("wslEnabled"))
         windows_version = str(status.get("currentWindows") or "n/a")
         wsl_version = str(status.get("currentWsl") or "n/a") if wsl_enabled else "n/a"
         latest_version = str(status.get("latest") or "n/a")
-        return (windows_version, wsl_version, latest_version)
+        raw_recent = status.get("recentVersions")
+        recent_versions = []
+        if isinstance(raw_recent, list):
+            recent_versions = [str(item).strip() for item in raw_recent if str(item).strip()]
+        return (windows_version, wsl_version, latest_version, recent_versions)
+
+    def _build_target_version_cell(
+        self,
+        name: str,
+        definition: dict[str, str],
+        latest_version: str,
+        recent_versions: list[str],
+    ) -> QWidget:
+        if definition.get("type") != "npm":
+            return QLabel("n/a")
+        combo = QComboBox()
+        candidates: list[str] = []
+        if latest_version and latest_version != "n/a":
+            candidates.append(latest_version)
+        candidates.extend(recent_versions)
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for version in candidates:
+            if version in seen:
+                continue
+            seen.add(version)
+            deduped.append(version)
+        if not deduped:
+            deduped = ["latest"]
+        for version in deduped:
+            combo.addItem(version, version)
+        self._version_selectors[name] = combo
+        return combo
+
+    def _selected_version_for(self, name: str) -> str | None:
+        selector = self._version_selectors.get(name)
+        if selector is None:
+            return None
+        version = str(selector.currentData() or selector.currentText() or "").strip()
+        return version or None
+
+    def _collect_target_versions(self) -> dict[str, str]:
+        versions: dict[str, str] = {}
+        for name, definition in self._definitions.items():
+            if definition.get("type") != "npm":
+                continue
+            selected = self._selected_version_for(name)
+            if selected:
+                versions[name] = selected
+        return versions
+
+    def _emit_update_all(self) -> None:
+        self.update_requested.emit(self._collect_target_versions())
 
     def _result_versions(self, result: dict[str, object]) -> str:
         windows = f"{result.get('versionBefore') or 'n/a'} -> {result.get('versionAfter') or 'n/a'}"
