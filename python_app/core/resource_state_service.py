@@ -1,10 +1,20 @@
 import json
+import os
 from pathlib import Path
 
 from .resource_assignments import normalize_resource_map
 
-DEFAULT_RESOURCE_STATE_FILE = Path(__file__).resolve().parents[2] / "resources.json"
 RESOURCE_STATE_VERSION = 1
+
+
+def _default_state_dir() -> Path:
+    appdata = os.getenv("APPDATA")
+    if appdata:
+        return Path(appdata) / "ai-config-sync"
+    return Path.home() / ".ai-config-sync"
+
+
+DEFAULT_RESOURCE_STATE_FILE = _default_state_dir() / "resources.json"
 
 
 def create_default_resources() -> dict[str, dict[str, dict[str, list[str]]]]:
@@ -43,6 +53,7 @@ def save_resources(
 ) -> dict[str, dict[str, dict[str, list[str]]]]:
     normalized = normalize_resources_shape(resources)
     resolved = _resolve_state_file(state_file)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(
         json.dumps(
             {"version": RESOURCE_STATE_VERSION, "resources": normalized},

@@ -20,6 +20,7 @@ from .tool_definitions import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILE = PROJECT_ROOT / "config.json"
+LEGACY_RESOURCE_STATE_FILE = PROJECT_ROOT / "resources.json"
 ABSOLUTE_PATH_PATTERN = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/])")
 WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:[\\/]")
 
@@ -261,12 +262,30 @@ def ensure_config_directories(config: dict[str, object]) -> None:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
 
 
+def _has_resource_assignments(resources: dict[str, object]) -> bool:
+    if not isinstance(resources, dict):
+        return False
+    for kind in ("skills", "commands"):
+        assignments = resources.get(kind)
+        if isinstance(assignments, dict) and assignments:
+            return True
+    return False
+
+
+def _load_runtime_resources() -> dict[str, dict[str, dict[str, list[str]]]]:
+    runtime_resources = load_resources()
+    if _has_resource_assignments(runtime_resources):
+        return runtime_resources
+    if not LEGACY_RESOURCE_STATE_FILE.exists():
+        return runtime_resources
+    legacy_resources = load_resources(state_file=LEGACY_RESOURCE_STATE_FILE)
+    save_resources(legacy_resources)
+    return legacy_resources
+
+
 def save_config(config: dict[str, object]) -> dict[str, object]:
     normalized = normalize_config_shape(config)
-    normalized_resources = save_resources(
-        normalized.get("resources", {}),
-        state_file=PROJECT_ROOT / "resources.json",
-    )
+    normalized_resources = save_resources(normalized.get("resources", {}))
     CONFIG_FILE.write_text(
         json.dumps(_build_config_file_payload(normalized), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -283,13 +302,13 @@ def load_config() -> dict[str, object]:
     config, migrated, embedded_resources = parse_config_file(raw_content)
     runtime_resources = config.get("resources", {"skills": {}, "commands": {}})
     if embedded_resources is None:
-        runtime_resources = load_resources(state_file=PROJECT_ROOT / "resources.json")
+        runtime_resources = _load_runtime_resources()
         config = {**config, "resources": runtime_resources}
     ensure_config_directories(config)
     normalized_file = json.dumps(_build_config_file_payload(config), indent=2, ensure_ascii=False)
     if migrated or raw_content.strip() != normalized_file:
         return save_config(config)
     if embedded_resources is not None:
-        save_resources(runtime_resources, state_file=PROJECT_ROOT / "resources.json")
+        save_resources(runtime_resources)
         return {**config, "resources": runtime_resources}
     return {**config, "resources": runtime_resources}
