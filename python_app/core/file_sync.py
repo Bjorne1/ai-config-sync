@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .process_utils import hidden_subprocess_kwargs
 
 def _copy_tree(source_path: str, target_path: str) -> None:
     shutil.copytree(source_path, target_path, copy_function=shutil.copy2)
@@ -125,6 +126,7 @@ def _remove_wsl_unc_path(target_path: str) -> dict[str, object] | None:
             capture_output=True,
             text=True,
             check=False,
+            **hidden_subprocess_kwargs(),
         )
     except OSError as error:
         return {"success": False, "message": str(error)}

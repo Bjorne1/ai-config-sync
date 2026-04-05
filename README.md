@@ -60,6 +60,12 @@ python -m python_app
 start.bat
 ```
 
+默认不显示 `cmd` 窗口。若需要查看控制台日志：
+
+```bash
+start.bat --console
+```
+
 ### 非 Windows
 
 不支持。`start.sh` 会直接退出并提示错误。

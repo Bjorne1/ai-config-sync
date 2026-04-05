@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .process_utils import hidden_subprocess_kwargs
 from .tool_definitions import TOOL_IDS, WINDOWS_HOME_TOKEN, WSL_HOME_TOKEN, build_root_map
 
 
@@ -28,7 +29,7 @@ def expand_wsl_path(input_path: str, home_dir: str | None) -> str:
 
 
 def _run_text_command(args: list[str]) -> str:
-    completed = subprocess.run(args, capture_output=True, check=True)
+    completed = subprocess.run(args, capture_output=True, check=True, **hidden_subprocess_kwargs())
     stdout = completed.stdout
     text = stdout.decode("utf-8", errors="ignore")
     if "\x00" in text:

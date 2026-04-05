@@ -2,6 +2,8 @@ import json
 import re
 import subprocess
 
+from .process_utils import hidden_subprocess_kwargs
+
 
 SEMVER_STABLE_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 SEMVER_CORE_PATTERN = re.compile(r"^(\d+\.\d+\.\d+)")
@@ -12,12 +14,30 @@ def _run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
         raise ValueError("command must not be empty")
     exe = command[0]
     if exe.lower() == "npm":
-        return subprocess.run(["cmd.exe", "/c", *command], capture_output=True, text=True, check=True)
-    return subprocess.run(command, capture_output=True, text=True, check=True)
+        return subprocess.run(
+            ["cmd.exe", "/c", *command],
+            capture_output=True,
+            text=True,
+            check=True,
+            **hidden_subprocess_kwargs(),
+        )
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=True,
+        **hidden_subprocess_kwargs(),
+    )
 
 
 def _run_wsl_capture(distro: str, command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["wsl.exe", "-d", distro, "--", *command], capture_output=True, text=True, check=True)
+    return subprocess.run(
+        ["wsl.exe", "-d", distro, "--", *command],
+        capture_output=True,
+        text=True,
+        check=True,
+        **hidden_subprocess_kwargs(),
+    )
 
 
 def get_npm_version(package_name: str) -> str | None:
@@ -107,6 +127,7 @@ def update_npm_tool(package_name: str, version: str = "latest") -> bool:
         completed = subprocess.run(
             ["cmd.exe", "/c", "npm", "install", "-g", f"{package_name}@{resolved_version}"],
             text=True,
+            **hidden_subprocess_kwargs(),
         )
     except OSError:
         return False
@@ -119,6 +140,7 @@ def update_wsl_npm_tool(distro: str, package_name: str, version: str = "latest")
         completed = subprocess.run(
             ["wsl.exe", "-d", distro, "--", "npm", "install", "-g", f"{package_name}@{resolved_version}"],
             text=True,
+            **hidden_subprocess_kwargs(),
         )
     except OSError:
         return False
@@ -127,7 +149,7 @@ def update_wsl_npm_tool(distro: str, package_name: str, version: str = "latest")
 
 def update_command_tool(command: str) -> bool:
     try:
-        completed = subprocess.run(command, shell=True, text=True)
+        completed = subprocess.run(command, shell=True, text=True, **hidden_subprocess_kwargs())
     except OSError:
         return False
     return completed.returncode == 0
@@ -135,7 +157,11 @@ def update_command_tool(command: str) -> bool:
 
 def update_wsl_command_tool(distro: str, command: str) -> bool:
     try:
-        completed = subprocess.run(["wsl.exe", "-d", distro, "--", "sh", "-lc", command], text=True)
+        completed = subprocess.run(
+            ["wsl.exe", "-d", distro, "--", "sh", "-lc", command],
+            text=True,
+            **hidden_subprocess_kwargs(),
+        )
     except OSError:
         return False
     return completed.returncode == 0
