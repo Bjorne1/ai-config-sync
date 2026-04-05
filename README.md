@@ -66,6 +66,12 @@ start.bat
 start.bat --console
 ```
 
+也可使用完全静默启动脚本：
+
+```bash
+start.vbs
+```
+
 ### 非 Windows
 
 不支持。`start.sh` 会直接退出并提示错误。

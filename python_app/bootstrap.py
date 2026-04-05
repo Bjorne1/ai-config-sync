@@ -26,7 +26,11 @@ class BootstrapBundle:
 
 
 def app_icon_path() -> Path:
-    return Path(__file__).resolve().parent / "assets" / "app_icon.png"
+    assets_dir = Path(__file__).resolve().parent / "assets"
+    ico = assets_dir / "app_icon.ico"
+    if ico.exists():
+        return ico
+    return assets_dir / "app_icon.png"
 
 
 def set_app_user_model_id() -> None:
