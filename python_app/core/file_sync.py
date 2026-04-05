@@ -1,5 +1,7 @@
 import os
+import shlex
 import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -74,15 +76,83 @@ def create_copy(source_path: str, target_path: str) -> dict[str, object]:
     return {"success": True, "message": "复制成功"}
 
 
+def _remove_directory(target: Path) -> None:
+    # Some WSL UNC symlink entries can be mis-reported as directories.
+    # Try unlink first to ensure links are removed before recursive delete.
+    try:
+        target.unlink()
+        return
+    except OSError:
+        pass
+    try:
+        os.rmdir(target)
+    except OSError:
+        shutil.rmtree(target)
+
+
+def _parse_wsl_unc_path(target_path: str) -> tuple[str, str] | None:
+    normalized = target_path.replace("/", "\\")
+    lowered = normalized.lower()
+    prefixes = ("\\\\wsl.localhost\\", "\\\\wsl$\\")
+    prefix = next((item for item in prefixes if lowered.startswith(item)), None)
+    if prefix is None:
+        return None
+    remainder = normalized[len(prefix) :]
+    parts = [part for part in remainder.split("\\") if part]
+    if not parts:
+        return None
+    distro = parts[0]
+    linux_path = "/" + "/".join(parts[1:]) if len(parts) > 1 else "/"
+    return distro, linux_path
+
+
+def _remove_wsl_unc_path(target_path: str) -> dict[str, object] | None:
+    parsed = _parse_wsl_unc_path(target_path)
+    if parsed is None:
+        return None
+    distro, linux_path = parsed
+    quoted = shlex.quote(linux_path)
+    command = (
+        f"if [ -e {quoted} ] || [ -L {quoted} ]; then "
+        f"rm -rf -- {quoted}; "
+        f"if [ -e {quoted} ] || [ -L {quoted} ]; then echo __ERR__; exit 1; fi; "
+        f"echo __OK__; "
+        f"else echo __MISSING__; fi"
+    )
+    try:
+        completed = subprocess.run(
+            ["wsl.exe", "-d", distro, "--", "sh", "-lc", command],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        return {"success": False, "message": str(error)}
+    output = (completed.stdout or "").strip()
+    if completed.returncode != 0 or "__ERR__" in output:
+        error_text = (completed.stderr or output or "WSL 删除失败").strip()
+        return {"success": False, "message": error_text}
+    if "__MISSING__" in output:
+        return {"success": True, "skipped": True, "message": "目标不存在"}
+    return {"success": True, "message": "删除成功"}
+
+
 def remove_path(target_path: str) -> dict[str, object]:
+    wsl_result = _remove_wsl_unc_path(target_path)
+    if wsl_result is not None:
+        return wsl_result
     if not has_path(target_path):
         return {"success": True, "skipped": True, "message": "目标不存在"}
     try:
         target = Path(target_path)
-        if target.is_symlink() or target.is_file():
+        if not os.path.exists(target_path) or os.path.islink(target_path):
             target.unlink()
+        elif target.is_file():
+            target.unlink()
+        elif target.is_dir():
+            _remove_directory(target)
         else:
-            shutil.rmtree(target_path)
+            target.unlink()
     except OSError as error:
         return {"success": False, "message": str(error)}
     return {"success": True, "message": "删除成功"}
