@@ -42,6 +42,20 @@
       "description": "优化黑话",
       "file": "Custom-Codex-WSL-1.1.md",
       "updatedAt": "2026-04-05T23:38:24"
+    },
+    {
+      "id": "432e3e5de99244f2a8c1ec6fdaceae39",
+      "name": "Custom-Claude-WSL-0405",
+      "description": "新增git workflow",
+      "file": "Custom-Claude-WSL-0405.md",
+      "updatedAt": "2026-04-05T23:45:50"
+    },
+    {
+      "id": "0051193ac8944870a4503897f7fec61c",
+      "name": "Custom-Codex-WSL-0405",
+      "description": "新增git workflow",
+      "file": "Custom-Codex-WSL-0405.md",
+      "updatedAt": "2026-04-05T23:46:47"
     }
   ],
   "assignments": {
