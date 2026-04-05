@@ -4,10 +4,6 @@
 
 Default to Chinese in user-facing replies unless the user explicitly requests another language.
 
-## Addressing
-
-Always address the user as "Boss" in conversation.
-
 ## Response Style
 
 Do not propose follow-up tasks or enhancements at the end of your final answer.
