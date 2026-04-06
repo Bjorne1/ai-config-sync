@@ -20,6 +20,7 @@ from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
 from .pages.tools_page import ToolsPage
 from .pages.workflow_page import WorkflowPage
+from .nav_icons import nav_icons
 from .theme import build_stylesheet
 from .widgets import NavButton
 
@@ -29,11 +30,11 @@ PAGE_KEYS = (
     "commands",
     "globalRules",
     "workflows",
-    "config",
-    "cleanup",
     "tools",
+    "cleanup",
+    "config",
 )
-PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "工作流", "配置", "清理", "工具更新")
+PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "工作流", "工具更新", "清理", "配置")
 
 
 class MainWindow(QMainWindow):
@@ -99,12 +100,13 @@ class MainWindow(QMainWindow):
         title.setObjectName("sidebarTitle")
         layout.addWidget(title)
         layout.addSpacing(20)
-        NAV_GROUP_BREAKS = {"config", "cleanup"}
+        NAV_GROUP_BREAKS = {"tools"}
         self.nav_buttons: dict[str, NavButton] = {}
         for key, label in zip(PAGE_KEYS, PAGE_LABELS, strict=True):
             if key in NAV_GROUP_BREAKS:
                 layout.addSpacing(12)
-            button = NavButton(label)
+            normal_icon, active_icon = nav_icons(key)
+            button = NavButton(label, normal_icon, active_icon)
             button.clicked.connect(lambda _=False, page_key=key: self.set_current_page(page_key))
             layout.addWidget(button)
             layout.addSpacing(4)
@@ -147,9 +149,9 @@ class MainWindow(QMainWindow):
             self.commands_page,
             self.global_rule_page,
             self.workflow_page,
-            self.config_page,
-            self.cleanup_page,
             self.tools_page,
+            self.cleanup_page,
+            self.config_page,
         ]
         for page in page_list:
             self.pages.addWidget(page)

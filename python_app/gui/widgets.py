@@ -104,13 +104,28 @@ class BadgeLabel(QLabel):
 
 
 class NavButton(QPushButton):
-    def __init__(self, label: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        label: str,
+        normal_icon: "QIcon | None" = None,
+        active_icon: "QIcon | None" = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(label, parent)
         self.setObjectName("navButton")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._normal_icon = normal_icon
+        self._active_icon = active_icon
+        if normal_icon and not normal_icon.isNull():
+            from PySide6.QtCore import QSize
+            self.setIcon(normal_icon)
+            self.setIconSize(QSize(16, 16))
 
     def set_active(self, active: bool) -> None:
         self.setProperty("active", active)
+        icon = self._active_icon if active else self._normal_icon
+        if icon and not icon.isNull():
+            self.setIcon(icon)
         self.style().unpolish(self)
         self.style().polish(self)
 
