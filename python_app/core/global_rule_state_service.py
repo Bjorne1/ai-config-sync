@@ -53,6 +53,11 @@ def _build_profile_file_name(name: str) -> str:
     return f"{_sanitize_file_name(name)}.md"
 
 
+def _normalize_scope_field(value: object, allowed: tuple[str, ...]) -> str | None:
+    text = str(value or "").strip().lower()
+    return text if text in allowed else None
+
+
 def _normalize_profile_manifest(raw_profile: object) -> dict[str, str]:
     if not isinstance(raw_profile, dict):
         raise ValueError("规则版本必须是 object。")
@@ -64,12 +69,16 @@ def _normalize_profile_manifest(raw_profile: object) -> dict[str, str]:
         raise ValueError("规则版本缺少 id。")
     if not name:
         raise ValueError(f"规则版本 {profile_id} 缺少名称。")
+    platform = _normalize_scope_field(raw_profile.get("platform"), ENVIRONMENT_IDS)
+    tool_scope = _normalize_scope_field(raw_profile.get("toolScope"), GLOBAL_RULE_TOOL_IDS)
     return {
         "id": profile_id,
         "name": name,
         "description": description,
         "file": _build_profile_file_name(name),
         "updatedAt": updated_at,
+        "platform": platform,
+        "toolScope": tool_scope,
     }
 
 
@@ -85,6 +94,8 @@ def _normalize_profile_payload(raw_profile: object) -> dict[str, str]:
         raise ValueError("规则版本缺少 id。")
     if not name:
         raise ValueError(f"规则版本 {profile_id} 缺少名称。")
+    platform = _normalize_scope_field(raw_profile.get("platform"), ENVIRONMENT_IDS)
+    tool_scope = _normalize_scope_field(raw_profile.get("toolScope"), GLOBAL_RULE_TOOL_IDS)
     return {
         "id": profile_id,
         "name": name,
@@ -92,6 +103,8 @@ def _normalize_profile_payload(raw_profile: object) -> dict[str, str]:
         "file": _build_profile_file_name(name),
         "updatedAt": updated_at,
         "content": content,
+        "platform": platform,
+        "toolScope": tool_scope,
     }
 
 
@@ -212,6 +225,8 @@ def save_global_rules(
             existing is None
             or existing["name"] != profile["name"]
             or existing["description"] != profile["description"]
+            or existing.get("platform") != profile["platform"]
+            or existing.get("toolScope") != profile["toolScope"]
             or existing_content != profile["content"]
         )
         updated_at = existing["updatedAt"] if existing and not changed else _timestamp_now()
@@ -225,6 +240,8 @@ def save_global_rules(
                 "description": profile["description"],
                 "file": file_name,
                 "updatedAt": updated_at,
+                "platform": profile["platform"],
+                "toolScope": profile["toolScope"],
             }
         )
     old_files = {profile["file"] for profile in existing_profiles}

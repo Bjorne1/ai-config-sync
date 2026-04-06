@@ -1,5 +1,6 @@
 import json
 import re
+import shlex
 import subprocess
 
 from .process_utils import hidden_subprocess_kwargs
@@ -31,8 +32,9 @@ def _run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _run_wsl_capture(distro: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+    shell_command = shlex.join(command)
     return subprocess.run(
-        ["wsl.exe", "-d", distro, "--", *command],
+        ["wsl.exe", "-d", distro, "--", "bash", "-ic", shell_command],
         capture_output=True,
         text=True,
         check=True,
@@ -136,9 +138,10 @@ def update_npm_tool(package_name: str, version: str = "latest") -> bool:
 
 def update_wsl_npm_tool(distro: str, package_name: str, version: str = "latest") -> bool:
     resolved_version = str(version or "latest").strip() or "latest"
+    shell_command = shlex.join(["npm", "install", "-g", f"{package_name}@{resolved_version}"])
     try:
         completed = subprocess.run(
-            ["wsl.exe", "-d", distro, "--", "npm", "install", "-g", f"{package_name}@{resolved_version}"],
+            ["wsl.exe", "-d", distro, "--", "bash", "-ic", shell_command],
             text=True,
             **hidden_subprocess_kwargs(),
         )
@@ -158,7 +161,7 @@ def update_command_tool(command: str) -> bool:
 def update_wsl_command_tool(distro: str, command: str) -> bool:
     try:
         completed = subprocess.run(
-            ["wsl.exe", "-d", distro, "--", "sh", "-lc", command],
+            ["wsl.exe", "-d", distro, "--", "bash", "-ic", command],
             text=True,
             **hidden_subprocess_kwargs(),
         )

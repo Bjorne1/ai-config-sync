@@ -6,56 +6,72 @@
       "name": "Custom-Codex-Win",
       "description": "INTJ、无ask question tool、Windows路径",
       "file": "Custom-Codex-Win.md",
-      "updatedAt": "2026-04-05T23:37:56"
+      "updatedAt": "2026-04-06T15:54:18",
+      "platform": "windows",
+      "toolScope": "codex"
     },
     {
       "id": "4ffb55bb97d54a9fa4a0f6ab86920b34",
       "name": "Custom-Claude-Win",
       "description": "",
       "file": "Custom-Claude-Win.md",
-      "updatedAt": "2026-04-05T23:37:40"
+      "updatedAt": "2026-04-06T15:54:30",
+      "platform": "windows",
+      "toolScope": "claude"
     },
     {
       "id": "a4de5f649dcb44c0b35fad0c50fb8df5",
       "name": "Custom-Codex-WSL",
       "description": "INTJ、无ask question tool、WSL路径、subagent",
       "file": "Custom-Codex-WSL.md",
-      "updatedAt": "2026-04-05T23:38:05"
+      "updatedAt": "2026-04-06T15:54:40",
+      "platform": "wsl",
+      "toolScope": "codex"
     },
     {
       "id": "31df484bbd9649bab66a2387ce4217e1",
       "name": "Custom-Claude-WSL",
       "description": "",
       "file": "Custom-Claude-WSL.md",
-      "updatedAt": "2026-04-05T23:38:09"
+      "updatedAt": "2026-04-06T15:54:56",
+      "platform": "wsl",
+      "toolScope": "claude"
     },
     {
       "id": "4bc4d028ebab4a17b61788089d4b1eca",
       "name": "Custom-Codex-Win-1.1",
       "description": "优化输出语言，减少黑话",
       "file": "Custom-Codex-Win-1.1.md",
-      "updatedAt": "2026-04-05T23:38:18"
+      "updatedAt": "2026-04-06T15:55:07",
+      "platform": "windows",
+      "toolScope": "codex"
     },
     {
       "id": "13051453a75b46b89e0f5f7c0be5336b",
       "name": "Custom-Codex-WSL-1.1",
       "description": "优化黑话",
       "file": "Custom-Codex-WSL-1.1.md",
-      "updatedAt": "2026-04-05T23:38:24"
+      "updatedAt": "2026-04-06T15:55:20",
+      "platform": "wsl",
+      "toolScope": "codex"
     },
     {
       "id": "432e3e5de99244f2a8c1ec6fdaceae39",
       "name": "Custom-Claude-WSL-0405",
       "description": "新增git workflow",
       "file": "Custom-Claude-WSL-0405.md",
-      "updatedAt": "2026-04-05T23:45:50"
+      "updatedAt": "2026-04-06T15:55:42",
+      "platform": "wsl",
+      "toolScope": "claude"
     },
     {
       "id": "0051193ac8944870a4503897f7fec61c",
       "name": "Custom-Codex-WSL-0405",
       "description": "新增git workflow",
       "file": "Custom-Codex-WSL-0405.md",
-      "updatedAt": "2026-04-05T23:46:47"
+      "updatedAt": "2026-04-06T15:55:58",
+      "platform": "wsl",
+      "toolScope": "codex"
     }
   ],
   "assignments": {

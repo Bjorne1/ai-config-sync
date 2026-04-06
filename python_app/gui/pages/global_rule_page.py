@@ -43,6 +43,8 @@ class GlobalRuleEditDialog(QDialog):
         name: str = "",
         description: str = "",
         content: str = "",
+        platform: str | None = None,
+        tool_scope: str | None = None,
         title: str = "新建规则",
         existing_names: set[str] = (),
         original_name: str = "",
@@ -64,6 +66,28 @@ class GlobalRuleEditDialog(QDialog):
         self.desc_input = QLineEdit()
         self.desc_input.setPlaceholderText("可选，简要描述规则用途")
         self.desc_input.setText(description)
+        scope_row = QHBoxLayout()
+        scope_row.setSpacing(12)
+        platform_label = QLabel("适用平台")
+        self.platform_combo = NoWheelComboBox()
+        self.platform_combo.addItem("通用", None)
+        self.platform_combo.addItem("Windows", "windows")
+        self.platform_combo.addItem("WSL", "wsl")
+        platform_index = self.platform_combo.findData(platform)
+        self.platform_combo.setCurrentIndex(platform_index if platform_index >= 0 else 0)
+        tool_scope_label = QLabel("适用工具")
+        self.tool_scope_combo = NoWheelComboBox()
+        self.tool_scope_combo.addItem("通用", None)
+        self.tool_scope_combo.addItem("Claude", "claude")
+        self.tool_scope_combo.addItem("Codex", "codex")
+        self.tool_scope_combo.addItem("Gemini", "gemini")
+        tool_scope_index = self.tool_scope_combo.findData(tool_scope)
+        self.tool_scope_combo.setCurrentIndex(tool_scope_index if tool_scope_index >= 0 else 0)
+        scope_row.addWidget(platform_label)
+        scope_row.addWidget(self.platform_combo)
+        scope_row.addWidget(tool_scope_label)
+        scope_row.addWidget(self.tool_scope_combo)
+        scope_row.addStretch(1)
         content_label = QLabel("规则内容（Markdown 纯文本）")
         self.content_editor = QPlainTextEdit()
         self.content_editor.setPlaceholderText("请输入规则内容…")
@@ -77,6 +101,7 @@ class GlobalRuleEditDialog(QDialog):
         layout.addWidget(self.name_input)
         layout.addWidget(desc_label)
         layout.addWidget(self.desc_input)
+        layout.addLayout(scope_row)
         layout.addWidget(content_label)
         layout.addWidget(self.content_editor, 1)
         layout.addWidget(self.button_box)
@@ -100,6 +125,12 @@ class GlobalRuleEditDialog(QDialog):
 
     def get_content(self) -> str:
         return self.content_editor.toPlainText()
+
+    def get_platform(self) -> str | None:
+        return self.platform_combo.currentData()
+
+    def get_tool_scope(self) -> str | None:
+        return self.tool_scope_combo.currentData()
 
 
 class GlobalRuleTargetCard(CardFrame):
@@ -148,6 +179,12 @@ class GlobalRuleTargetCard(CardFrame):
         self.profile_combo.clear()
         self.profile_combo.addItem("未分配", None)
         for profile in profiles:
+            p_platform = profile.get("platform")
+            p_tool_scope = profile.get("toolScope")
+            if p_platform and p_platform != self.environment_id:
+                continue
+            if p_tool_scope and p_tool_scope != self.tool_id:
+                continue
             self.profile_combo.addItem(
                 str(profile.get("name") or "(未命名规则)"),
                 str(profile["id"]),
@@ -306,6 +343,7 @@ class GlobalRulePage(QWidget):
         self.assignment_meta.setObjectName("muted")
         self.assignment_meta.setWordWrap(True)
         card.body_layout.addWidget(self.assignment_meta)
+        card.layout().addStretch(1)
         return card
 
     def set_context(
@@ -363,7 +401,13 @@ class GlobalRulePage(QWidget):
             if query and query not in name.lower():
                 continue
             used_count = self._usage_count(str(profile["id"]))
-            text = name if not used_count else f"{name}  ·  {used_count} 个目标"
+            parts = [name]
+            scope_tag = self._scope_tag(profile)
+            if scope_tag:
+                parts.append(scope_tag)
+            if used_count:
+                parts.append(f"{used_count} 个目标")
+            text = "  ·  ".join(parts)
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, str(profile["id"]))
             updated_at = str(profile.get("updatedAt") or "未保存")
@@ -371,6 +415,12 @@ class GlobalRulePage(QWidget):
             tip_lines = [name, f"更新时间：{updated_at}"]
             if description:
                 tip_lines.insert(1, f"描述：{description}")
+            platform = profile.get("platform")
+            tool_scope = profile.get("toolScope")
+            tip_lines.append(
+                f"适用平台：{ENVIRONMENT_LABELS.get(platform, '通用')}　"
+                f"适用工具：{TOOL_LABELS.get(tool_scope, '通用')}"
+            )
             item.setToolTip("\n".join(tip_lines))
             self.profile_list.addItem(item)
         self.profile_list.blockSignals(False)
@@ -408,6 +458,8 @@ class GlobalRulePage(QWidget):
                 "file": f"{profile_id}.md",
                 "updatedAt": "",
                 "content": dialog.get_content(),
+                "platform": dialog.get_platform(),
+                "toolScope": dialog.get_tool_scope(),
             }
         )
         self._selected_profile_id = profile_id
@@ -424,6 +476,8 @@ class GlobalRulePage(QWidget):
             name=original_name,
             description=str(profile.get("description") or ""),
             content=str(profile.get("content") or ""),
+            platform=profile.get("platform"),
+            tool_scope=profile.get("toolScope"),
             title="编辑规则",
             existing_names=existing_names,
             original_name=original_name,
@@ -434,6 +488,8 @@ class GlobalRulePage(QWidget):
         profile["name"] = dialog.get_name()
         profile["description"] = dialog.get_description()
         profile["content"] = dialog.get_content()
+        profile["platform"] = dialog.get_platform()
+        profile["toolScope"] = dialog.get_tool_scope()
         self._emit_save_profiles()
 
     def _copy_profile(self) -> None:
@@ -446,6 +502,8 @@ class GlobalRulePage(QWidget):
             name=f"{profile.get('name') or '未命名规则'} 副本",
             description=str(profile.get("description") or ""),
             content=str(profile.get("content") or ""),
+            platform=profile.get("platform"),
+            tool_scope=profile.get("toolScope"),
             title="复制规则",
             existing_names=existing_names,
             parent=self,
@@ -461,6 +519,8 @@ class GlobalRulePage(QWidget):
                 "file": f"{profile_id}.md",
                 "updatedAt": "",
                 "content": dialog.get_content(),
+                "platform": dialog.get_platform(),
+                "toolScope": dialog.get_tool_scope(),
             }
         )
         self._selected_profile_id = profile_id
@@ -498,6 +558,8 @@ class GlobalRulePage(QWidget):
                     "description": str(profile.get("description") or ""),
                     "content": str(profile.get("content") or ""),
                     "updatedAt": str(profile.get("updatedAt") or ""),
+                    "platform": profile.get("platform"),
+                    "toolScope": profile.get("toolScope"),
                 }
                 for profile in self._profiles
             ]
@@ -643,3 +705,16 @@ class GlobalRulePage(QWidget):
             for tool_id in GLOBAL_RULE_TOOL_IDS
             if self._assignments.get(environment_id, {}).get(tool_id) == profile_id
         )
+
+    @staticmethod
+    def _scope_tag(profile: dict[str, object]) -> str:
+        platform = profile.get("platform")
+        tool_scope = profile.get("toolScope")
+        if not platform and not tool_scope:
+            return ""
+        parts: list[str] = []
+        if platform:
+            parts.append(ENVIRONMENT_LABELS.get(str(platform), str(platform)))
+        if tool_scope:
+            parts.append(TOOL_LABELS.get(str(tool_scope), str(tool_scope)))
+        return f"[{'/'.join(parts)}]"

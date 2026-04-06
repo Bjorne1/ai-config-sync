@@ -31,6 +31,7 @@ class AppController(QObject):
         self._workers: list[TaskThread] = []
         self._accumulated_tool_results: list[dict[str, object]] = []
         self._accumulated_gr_results: list[dict[str, object]] = []
+        self._auto_skill_check_done = False
         self._connect_signals()
 
     def start(self) -> None:
@@ -88,6 +89,7 @@ class AppController(QObject):
     def _after_snapshot(self, snapshot: dict[str, object]) -> None:
         self.window.set_snapshot(snapshot)
         self._refresh_update_tool_statuses(snapshot)
+        self._auto_check_skill_updates(snapshot)
 
     def _refresh_update_tool_statuses(self, snapshot: dict[str, object]) -> None:
         if self.busy.get("loadUpdateToolStatuses"):
@@ -107,6 +109,26 @@ class AppController(QObject):
             "读取工具版本",
             lambda: self.service.get_update_tool_statuses(config, wsl_runtime),
             lambda statuses: self.window.set_update_tool_statuses(statuses),
+            log_success=False,
+            reset_error=False,
+        )
+
+    def _auto_check_skill_updates(self, snapshot: dict[str, object]) -> None:
+        if self._auto_skill_check_done:
+            return
+        self._auto_skill_check_done = True
+        upstreams = snapshot.get("skillUpstreams")
+        if not isinstance(upstreams, dict) or not upstreams:
+            return
+        names = [name for name, entry in upstreams.items()
+                 if isinstance(entry, dict) and entry.get("url")]
+        if not names:
+            return
+        self._run_task(
+            "autoSkillCheck",
+            "自动检查 Skill 更新",
+            lambda: self.service.check_skill_updates(names),
+            lambda result: self.window.set_skill_update_results(result),
             log_success=False,
             reset_error=False,
         )
