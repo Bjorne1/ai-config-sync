@@ -2,11 +2,13 @@ from copy import deepcopy
 from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -34,6 +36,7 @@ from ..logo_matrix import (
 from ..pagination import Pager, paginate
 from .resource_selection import PageSelection
 from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure_table
+from .skill_upstream_dialogs import AddSkillFromUrlDialog, SetSkillUrlDialog
 RESOURCE_ROWS_PER_PAGE = 10
 NAME_CELL_PREVIEW_CHARS = 90
 ROW_HEIGHT_DEFAULT = 42
@@ -97,7 +100,7 @@ def _build_expandable_name_cell(
     toggle.setStyleSheet(
         "QPushButton { border: none; background: transparent;"
         " font-size: 10px; color: #6b7280; }"
-        "QPushButton:hover { color: #f97316; }"
+        "QPushButton:hover { color: #3b82f6; }"
     )
     toggle.setCursor(Qt.CursorShape.PointingHandCursor)
     toggle.clicked.connect(on_toggle)
@@ -124,6 +127,10 @@ def _build_expandable_name_cell(
 class ResourcePage(QWidget):
     rescan_requested = Signal(str)
     sync_requested = Signal(str, object)
+    add_skill_requested = Signal(object)
+    set_url_requested = Signal(object)
+    check_upstream_requested = Signal(object)
+    upgrade_upstream_requested = Signal(object)
     def __init__(self, kind: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.kind = kind
@@ -137,6 +144,9 @@ class ResourcePage(QWidget):
         self._visible_rows: list[dict[str, object]] = []
         self._expanded_names: set[str] = set()
         self._display_items: list[dict[str, object]] = []
+        self._upstream_inventory: list[dict[str, object]] = []
+        self._upstreams: dict[str, dict[str, object]] = {}
+        self._update_results: dict[str, dict[str, object]] = {}
         self._build_ui()
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -163,14 +173,28 @@ class ResourcePage(QWidget):
         self.sync_button.clicked.connect(self._emit_sync)
         self.upgrade_button.clicked.connect(self._emit_upgrade_all)
         self.remove_button.clicked.connect(self._emit_remove)
+        col = 2
         grid.addWidget(self.search, 0, 0, 1, 2)
-        grid.addWidget(self.rescan_button, 0, 2)
-        grid.addWidget(self.sync_button, 0, 3)
-        grid.addWidget(self.upgrade_button, 0, 4)
-        grid.addWidget(self.remove_button, 0, 5)
+        grid.addWidget(self.rescan_button, 0, col); col += 1
+        grid.addWidget(self.sync_button, 0, col); col += 1
+        grid.addWidget(self.upgrade_button, 0, col); col += 1
+        grid.addWidget(self.remove_button, 0, col); col += 1
+        self.add_skill_button = None
+        self.set_url_button = None
+        self.check_button = None
+        if self.kind == "skills":
+            self.add_skill_button = ActionButton("新增 Skill", "secondary")
+            self.set_url_button = ActionButton("设置 URL", "secondary")
+            self.check_button = ActionButton("检查更新", "secondary")
+            self.add_skill_button.clicked.connect(self._open_add_dialog)
+            self.set_url_button.clicked.connect(self._open_set_url_dialog)
+            self.check_button.clicked.connect(self._emit_check)
+            grid.addWidget(self.add_skill_button, 0, col); col += 1
+            grid.addWidget(self.set_url_button, 0, col); col += 1
+            grid.addWidget(self.check_button, 0, col); col += 1
         self.meta = QLabel("0 条记录")
         self.meta.setObjectName("muted")
-        grid.addWidget(self.meta, 1, 0, 1, 6)
+        grid.addWidget(self.meta, 1, 0, 1, col)
         card.body_layout.addLayout(grid)
         return card
     def _build_table_card(self, title: str) -> QWidget:
@@ -259,6 +283,14 @@ class ResourcePage(QWidget):
         )
 
     def _emit_upgrade_all(self) -> None:
+        if self.kind == "skills":
+            upstream_names = [
+                name for name, upstream in self._upstreams.items()
+                if upstream.get("url")
+            ]
+            if upstream_names:
+                self.upgrade_upstream_requested.emit({"names": upstream_names})
+                return
         names = self._upgradeable_names()
         assignments = self._build_upgrade_assignments(names)
         self.sync_requested.emit(
@@ -289,11 +321,17 @@ class ResourcePage(QWidget):
         visible = {row["name"] for row in self._filtered_rows()}
         return sorted(self.selected_names & visible)
 
-    def set_busy(self, rescan_busy: bool, sync_busy: bool) -> None:
+    def set_busy(self, rescan_busy: bool, sync_busy: bool, upstream_busy: bool = False) -> None:
         self.rescan_button.set_busy(rescan_busy)
         self.sync_button.set_busy(sync_busy)
-        self.upgrade_button.set_busy(sync_busy)
+        self.upgrade_button.set_busy(sync_busy or upstream_busy)
         self.remove_button.set_busy(sync_busy)
+        if self.add_skill_button:
+            self.add_skill_button.set_busy(upstream_busy)
+        if self.set_url_button:
+            self.set_url_button.set_busy(upstream_busy)
+        if self.check_button:
+            self.check_button.set_busy(upstream_busy)
 
     def _handle_filter_changed(self) -> None:
         self._page_index = 0
@@ -352,11 +390,12 @@ class ResourcePage(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._apply_matrix_item_state(item, row, environment_id, tool_id)
             self.table.setItem(row_index, offset + 3, item)
-        upgrade_item = QTableWidgetItem("升级" if self._is_upgradeable_row(row) else "")
-        upgrade_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        upgrade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        upgrade_item.setToolTip("升级：同步缺失或有新版本的条目，跳过目标比源新的条目。")
-        self.table.setItem(row_index, ACTION_COLUMN, upgrade_item)
+        action_text = self._action_column_text(row)
+        action_item = QTableWidgetItem(action_text)
+        action_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        action_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        action_item.setToolTip(self._action_column_tooltip(row))
+        self.table.setItem(row_index, ACTION_COLUMN, action_item)
         self._sync_row_height(row_index, row.get("description", ""))
 
     def _set_select_cell(self, row_index: int, name: str) -> None:
@@ -516,15 +555,37 @@ class ResourcePage(QWidget):
         self.sync_requested.emit(self.kind, payload)
 
     def _handle_upgrade_clicked(self, index: QModelIndex) -> None:
-        row = index.row()
-        if row >= len(self._display_items):
+        row_idx = index.row()
+        if row_idx >= len(self._display_items):
             return
-        if self._display_items[row]["type"] != _ITEM_RESOURCE:
+        if self._display_items[row_idx]["type"] != _ITEM_RESOURCE:
             return
-        resource = self._display_items[row]["row"]
+        resource = self._display_items[row_idx]["row"]
+        name = resource["name"]
+
+        if self.kind == "skills":
+            upstream = self._upstreams.get(name, {})
+            url = str(upstream.get("url") or "").strip()
+            if not url:
+                dialog = SetSkillUrlDialog(f"设置 URL：{name}", self)
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    return
+                url = dialog.url()
+                if not url:
+                    return
+                self.set_url_requested.emit({"names": [name], "url": url})
+                return
+            update = self._update_results.get(name, {})
+            if not update:
+                self.check_upstream_requested.emit({"names": [name]})
+                return
+            has_update = bool(update.get("latestCommit")) and update.get("latestCommit") != update.get("installedCommit")
+            if has_update:
+                self.upgrade_upstream_requested.emit({"names": [name]})
+                return
+
         if not self._is_upgradeable_row(resource):
             return
-        name = resource["name"]
         targets = deepcopy(self.assignments.get(name, {}))
         if not self._has_assignments(targets):
             return
@@ -580,3 +641,92 @@ class ResourcePage(QWidget):
         self._apply_matrix_item_state(item, row, environment_id, tool_id)
         index = self.table.model().index(row_index, column)
         self.table.model().dataChanged.emit(index, index)
+
+    def _action_column_text(self, row: dict[str, object]) -> str:
+        if self.kind != "skills":
+            return "升级" if self._is_upgradeable_row(row) else ""
+        name = row["name"]
+        upstream = self._upstreams.get(name, {})
+        url = str(upstream.get("url") or "").strip()
+        if not url:
+            return "设置 URL"
+        update = self._update_results.get(name, {})
+        if not update:
+            return "检查"
+        has_update = bool(update.get("latestCommit")) and update.get("latestCommit") != update.get("installedCommit")
+        if has_update:
+            return "升级"
+        if self._is_upgradeable_row(row):
+            return "升级"
+        return "\u2713"
+
+    def _action_column_tooltip(self, row: dict[str, object]) -> str:
+        if self.kind != "skills":
+            return "升级：同步缺失或有新版本的条目，跳过目标比源新的条目。"
+        name = row["name"]
+        upstream = self._upstreams.get(name, {})
+        url = str(upstream.get("url") or "").strip()
+        if not url:
+            return "点击设置上游 URL"
+        update = self._update_results.get(name, {})
+        if not update:
+            return "点击检查远程更新"
+        has_update = bool(update.get("latestCommit")) and update.get("latestCommit") != update.get("installedCommit")
+        if has_update:
+            installed = str(update.get("installedCommit") or "未记录")[:8]
+            latest = str(update.get("latestCommit") or "")[:8]
+            return f"有新版本: {installed} → {latest}"
+        if self._is_upgradeable_row(row):
+            return "本地文件有更新可同步"
+        return "已是最新"
+
+    def set_upstream_context(
+        self,
+        inventory: list[dict[str, object]],
+        upstreams: dict[str, dict[str, object]],
+    ) -> None:
+        self._upstream_inventory = deepcopy(inventory) if isinstance(inventory, list) else []
+        self._upstreams = deepcopy(upstreams) if isinstance(upstreams, dict) else {}
+        self._rebuild_table()
+
+    def set_update_results(self, results: list[dict[str, object]]) -> None:
+        self._update_results = {
+            str(item.get("name")): deepcopy(item)
+            for item in results
+            if isinstance(item, dict)
+        }
+        self._rebuild_table()
+
+    def _open_add_dialog(self) -> None:
+        dialog = AddSkillFromUrlDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        payload = dialog.payload()
+        if not payload["name"]:
+            QMessageBox.warning(self, "新增失败", "请填写 Skill 名称。")
+            return
+        if not payload["url"]:
+            QMessageBox.warning(self, "新增失败", "请填写 URL。")
+            return
+        self.add_skill_requested.emit(payload)
+
+    def _open_set_url_dialog(self) -> None:
+        names = self.get_selected_names()
+        if not names:
+            QMessageBox.warning(self, "设置失败", "请先选择 Skill。")
+            return
+        dialog = SetSkillUrlDialog(f"设置 URL（{len(names)} 个）", self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        url = dialog.url()
+        if not url:
+            QMessageBox.warning(self, "设置失败", "请填写 URL。")
+            return
+        self.set_url_requested.emit({"names": names, "url": url})
+
+    def _emit_check(self) -> None:
+        names = self.get_selected_names()
+        if not names:
+            QMessageBox.warning(self, "检查失败", "请先选择 Skill。")
+            return
+        self.check_upstream_requested.emit({"names": names})

@@ -81,9 +81,9 @@ class ToolsPage(QWidget):
         super().__init__(parent)
         self._definitions: dict[str, dict[str, str]] = {}
         self._version_selectors: dict[str, QComboBox] = {}
-        self._update_buttons: list[ActionButton] = []
-        self._edit_buttons: list[ActionButton] = []
-        self._delete_buttons: list[ActionButton] = []
+        self._update_buttons: dict[str, ActionButton] = {}
+        self._edit_buttons: dict[str, ActionButton] = {}
+        self._delete_buttons: dict[str, ActionButton] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -146,9 +146,9 @@ class ToolsPage(QWidget):
     ) -> None:
         self._definitions = deepcopy(definitions)
         self._version_selectors = {}
-        self._update_buttons = []
-        self._edit_buttons = []
-        self._delete_buttons = []
+        self._update_buttons = {}
+        self._edit_buttons = {}
+        self._delete_buttons = {}
         entries = sorted(definitions.items(), key=lambda item: item[0].lower())
         self.definition_meta.setText(f"共 {len(entries)} 个更新定义（npm / npx / custom）")
         self.definition_table.setRowCount(len(entries))
@@ -178,18 +178,22 @@ class ToolsPage(QWidget):
                 self.result_table.setItem(row_index, column, item)
         self._sync_result_table_height()
 
-    def set_busy(self, update_busy: bool, save_busy: bool) -> None:
-        self.run_button.set_busy(update_busy)
-        self.new_button.setDisabled(update_busy or save_busy)
-        disable_ops = update_busy or save_busy
-        for selector in self._version_selectors.values():
-            selector.setDisabled(disable_ops)
-        for button in self._update_buttons:
-            button.setDisabled(disable_ops)
-        for button in self._edit_buttons:
-            button.setDisabled(disable_ops)
-        for button in self._delete_buttons:
-            button.setDisabled(disable_ops)
+    def set_busy(self, batch_busy: bool, save_busy: bool, busy_tools: set[str] = frozenset()) -> None:
+        self.run_button.set_busy(batch_busy)
+        self.new_button.setDisabled(batch_busy or save_busy)
+        disable_all = batch_busy or save_busy
+        for name, selector in self._version_selectors.items():
+            selector.setDisabled(disable_all or name in busy_tools)
+        for name, button in self._update_buttons.items():
+            if name in busy_tools:
+                button.set_busy(True)
+            else:
+                button.set_busy(False)
+                button.setDisabled(disable_all)
+        for name, button in self._edit_buttons.items():
+            button.setDisabled(disable_all or name in busy_tools)
+        for name, button in self._delete_buttons.items():
+            button.setDisabled(disable_all or name in busy_tools)
         self.definition_table.setDisabled(save_busy)
 
     def _definition_value(self, definition: dict[str, str]) -> str:
@@ -214,9 +218,9 @@ class ToolsPage(QWidget):
         layout.addWidget(update_button)
         layout.addWidget(edit_button)
         layout.addWidget(delete_button)
-        self._update_buttons.append(update_button)
-        self._edit_buttons.append(edit_button)
-        self._delete_buttons.append(delete_button)
+        self._update_buttons[name] = update_button
+        self._edit_buttons[name] = edit_button
+        self._delete_buttons[name] = delete_button
         return container
 
     def _definition_versions(

@@ -163,7 +163,36 @@ class GuiSmokeTests(unittest.TestCase):
             ]
         )
 
+        page.set_upstream_context(
+            [{"name": "demo-skill", "path": r"D:\wcs_project\ai-config-sync\skills\demo-skill"}],
+            {"demo-skill": {"url": "https://github.com/test/repo", "installedCommit": "abc123"}},
+        )
+        page.set_update_results([
+            {"name": "demo-skill", "installedCommit": "abc123", "latestCommit": "abc123"},
+        ])
+
         self.assertEqual(page.table.item(0, 11).text(), "升级")
+
+    def test_skills_page_has_upstream_signals(self) -> None:
+        page = ResourcePage("skills")
+        self.assertTrue(hasattr(page, "add_skill_requested"))
+        self.assertTrue(hasattr(page, "set_url_requested"))
+        self.assertTrue(hasattr(page, "check_upstream_requested"))
+        self.assertTrue(hasattr(page, "upgrade_upstream_requested"))
+        self.assertIsNotNone(page.add_skill_button)
+        self.assertIsNotNone(page.set_url_button)
+        self.assertIsNotNone(page.check_button)
+
+    def test_commands_page_has_no_upstream_buttons(self) -> None:
+        page = ResourcePage("commands")
+        self.assertIsNone(page.add_skill_button)
+        self.assertIsNone(page.set_url_button)
+        self.assertIsNone(page.check_button)
+
+    def test_main_window_has_7_pages(self) -> None:
+        window = MainWindow()
+        self.assertEqual(window.pages.count(), 7)
+        self.assertFalse(hasattr(window, "skill_upstream_page"))
 
     def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:
         page = ResourcePage("commands")

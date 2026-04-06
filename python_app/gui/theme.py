@@ -1,20 +1,36 @@
 from PySide6.QtGui import QColor, QFont
 
-WINDOW_BACKGROUND = "#f4f7fb"
+# --- Color Palette ---
+
+# Backgrounds
+WINDOW_BACKGROUND = "#f8fafc"
 SURFACE = "#ffffff"
-SURFACE_ALT = "#edf1f7"
-SURFACE_MUTED = "#cfd8e3"
-TEXT_PRIMARY = "#24313f"
-TEXT_MUTED = "#5c6d7f"
-SIDEBAR = "#1f2937"
+SURFACE_ALT = "#f1f5f9"
+SURFACE_MUTED = "#e2e8f0"
+
+# Sidebar
+SIDEBAR = "#1e293b"
 SIDEBAR_ALT = "#334155"
-ACCENT = "#f97316"
-ACCENT_SOFT = "#ffedd5"
-BORDER = "#b8c4d1"
-SUCCESS = "#15803d"
+
+# Accent
+ACCENT = "#3b82f6"
+ACCENT_HOVER = "#2563eb"
+ACCENT_SOFT = "#eff6ff"
+
+# Border
+BORDER = "#e2e8f0"
+BORDER_FOCUS = "#3b82f6"
+
+# Status
+SUCCESS = "#16a34a"
 WARNING = "#d97706"
-ERROR = "#b91c1c"
-INFO = "#2563eb"
+ERROR = "#dc2626"
+INFO = "#3b82f6"
+
+# Text
+TEXT_PRIMARY = "#1e293b"
+TEXT_SECONDARY = "#64748b"
+TEXT_MUTED = "#94a3b8"
 
 STATE_COLORS = {
     "healthy": (SUCCESS, "#dcfce7"),
@@ -24,24 +40,24 @@ STATE_COLORS = {
     "ahead": (ERROR, "#fee2e2"),
     "conflict": (ERROR, "#fee2e2"),
     "source_missing": (ERROR, "#fee2e2"),
-    "tool_unavailable": (TEXT_MUTED, "#e2e8f0"),
+    "tool_unavailable": (TEXT_MUTED, "#f1f5f9"),
     "environment_error": (ERROR, "#fee2e2"),
     "profile_missing": (ERROR, "#fee2e2"),
     "partial": (INFO, "#dbeafe"),
-    "idle": (TEXT_MUTED, "#e2e8f0"),
+    "idle": (TEXT_MUTED, "#f1f5f9"),
     "detected": (WARNING, "#fef3c7"),
 }
 
 
 def create_app_font(size: int, weight: int = QFont.Weight.Normal) -> QFont:
-    font = QFont("Fira Sans", size)
+    font = QFont("Segoe UI", size)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     font.setWeight(weight)
     return font
 
 
 def create_mono_font(size: int, weight: int = QFont.Weight.Medium) -> QFont:
-    font = QFont("Fira Code", size)
+    font = QFont("Cascadia Code", size)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     font.setWeight(weight)
     return font
@@ -57,7 +73,7 @@ def build_stylesheet() -> str:
     return f"""
     QWidget {{
         color: {TEXT_PRIMARY};
-        font-family: 'Fira Sans', 'Segoe UI', sans-serif;
+        font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
         font-size: 13px;
     }}
     QLabel {{
@@ -71,7 +87,7 @@ def build_stylesheet() -> str:
         border: 0;
     }}
     QLabel#eyebrow {{
-        color: {TEXT_MUTED};
+        color: {TEXT_SECONDARY};
         font-size: 11px;
         font-weight: 600;
         text-transform: uppercase;
@@ -79,44 +95,30 @@ def build_stylesheet() -> str:
     }}
     QLabel#title {{
         color: {TEXT_PRIMARY};
-        font-size: 30px;
+        font-size: 18px;
         font-weight: 700;
     }}
     QLabel#sectionTitle {{
         color: {TEXT_PRIMARY};
-        font-size: 20px;
+        font-size: 15px;
         font-weight: 700;
     }}
     QLabel#muted {{
-        color: {TEXT_MUTED};
+        color: {TEXT_SECONDARY};
     }}
+    /* Sidebar */
     QFrame#sidebar {{
         background: {SIDEBAR};
-        border: 1px solid {tint(ACCENT, 30)};
-        border-radius: 28px;
-    }}
-    QFrame#sidebarHero {{
-        background: #111827;
-        border: 1px solid {tint(ACCENT, 55)};
-        border-radius: 20px;
+        border: none;
+        border-radius: 0;
     }}
     QLabel#sidebarTitle {{
         color: #f8fafc;
-        font-size: 28px;
-        font-weight: 800;
-    }}
-    QLabel#sidebarIntro {{
-        color: #94a3b8;
-        font-size: 12px;
-    }}
-    QLabel#sidebarSectionLabel {{
-        color: #7c8ea5;
-        font-size: 11px;
+        font-size: 15px;
         font-weight: 700;
-        padding-left: 4px;
     }}
     QLabel#formLabel {{
-        color: {TEXT_MUTED};
+        color: {TEXT_SECONDARY};
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.16em;
@@ -124,47 +126,45 @@ def build_stylesheet() -> str:
     }}
     QPushButton#navButton {{
         background: transparent;
-        border: 1px solid transparent;
+        border: none;
         border-left: 3px solid transparent;
-        border-radius: 12px;
-        color: #94a3b8;
+        border-radius: 6px;
+        color: {TEXT_MUTED};
         font-weight: 600;
-        min-height: 40px;
-        padding: 0 12px;
+        font-size: 13px;
+        min-height: 38px;
+        padding: 0 16px;
         text-align: left;
     }}
     QPushButton#navButton:hover {{
-        background: #273449;
-        border-color: transparent;
-        border-left: 3px solid {tint(ACCENT, 120)};
+        background: rgba(51, 65, 85, 0.4);
         color: #e2e8f0;
     }}
     QPushButton#navButton[active="true"] {{
         background: {tint(ACCENT, 30)};
         border-left: 3px solid {ACCENT};
-        color: {ACCENT};
+        color: #e2e8f0;
     }}
-    /* 卡片 */
+    /* Cards */
     QFrame#card {{
         background: {SURFACE};
-        border: 1px solid rgba(184, 196, 209, 0.4);
-        border-bottom: 2px solid rgba(184, 196, 209, 0.25);
+        border: 1px solid {BORDER};
         border-radius: 8px;
     }}
     QFrame#metricCard {{
         background: {SURFACE};
-        border: 1px solid rgba(184, 196, 209, 0.4);
-        border-bottom: 2px solid rgba(184, 196, 209, 0.25);
+        border: 1px solid {BORDER};
         border-radius: 8px;
     }}
-    /* 按钮 */
+    /* Buttons */
     QPushButton#primaryButton,
     QPushButton#secondaryButton,
     QPushButton#dangerButton {{
-        border-radius: 8px;
-        font-weight: 700;
-        min-height: 38px;
-        padding: 0 18px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 13px;
+        min-height: 32px;
+        padding: 0 14px;
     }}
     QPushButton#primaryButton {{
         background: {ACCENT};
@@ -172,12 +172,12 @@ def build_stylesheet() -> str:
         color: white;
     }}
     QPushButton#primaryButton:hover {{
-        background: #fb923c;
-        border-color: #fb923c;
+        background: {ACCENT_HOVER};
+        border-color: {ACCENT_HOVER};
     }}
     QPushButton#primaryButton:pressed {{
-        background: #ea580c;
-        border-color: #ea580c;
+        background: #1d4ed8;
+        border-color: #1d4ed8;
     }}
     QPushButton#secondaryButton {{
         background: {SURFACE};
@@ -185,87 +185,85 @@ def build_stylesheet() -> str:
         color: {TEXT_PRIMARY};
     }}
     QPushButton#secondaryButton:hover {{
-        background: {WINDOW_BACKGROUND};
+        background: {ACCENT_SOFT};
         border-color: {ACCENT};
         color: {ACCENT};
     }}
     QPushButton#secondaryButton:pressed {{
-        background: {SURFACE_ALT};
-        border-color: #ea580c;
-        color: #ea580c;
+        background: #dbeafe;
+        border-color: {ACCENT_HOVER};
+        color: {ACCENT_HOVER};
     }}
     QPushButton#dangerButton {{
-        background: #991b1b;
-        border: 1px solid #991b1b;
-        color: white;
+        background: {SURFACE};
+        border: 1px solid {ERROR};
+        color: {ERROR};
     }}
     QPushButton#dangerButton:hover {{
-        background: #b91c1c;
-        border-color: #b91c1c;
+        background: #fef2f2;
+        border-color: {ERROR};
     }}
     QPushButton#dangerButton:pressed {{
-        background: #7f1d1d;
-        border-color: #7f1d1d;
+        background: #fee2e2;
+        border-color: #b91c1c;
+        color: #b91c1c;
     }}
     QPushButton:disabled {{
         opacity: 0.55;
     }}
-    /* 输入框 */
+    /* Inputs */
     QLineEdit, QComboBox, QPlainTextEdit, QTableWidget, QListWidget {{
         background: {SURFACE};
         border: 1px solid {BORDER};
-        border-radius: 8px;
+        border-radius: 6px;
         selection-background-color: {ACCENT};
         selection-color: white;
     }}
     QLineEdit, QComboBox, QPlainTextEdit {{
-        padding: 8px 10px;
+        padding: 6px 10px;
     }}
     QLineEdit, QComboBox {{
-        min-height: 22px;
+        min-height: 20px;
     }}
     QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QListWidget:focus {{
         border: 1.5px solid {ACCENT};
     }}
     QListWidget::item {{
         padding: 8px 10px;
-        border-bottom: 1px solid rgba(184, 196, 209, 0.25);
+        border-bottom: 1px solid {SURFACE_ALT};
     }}
     QListWidget::item:selected {{
         background: {ACCENT_SOFT};
         color: {TEXT_PRIMARY};
     }}
-    /* 表格 */
+    /* Tables */
     QTableWidget {{
-        gridline-color: {SURFACE_MUTED};
-        alternate-background-color: {SURFACE_ALT};
-        border-radius: 8px;
+        gridline-color: {SURFACE_ALT};
+        alternate-background-color: {WINDOW_BACKGROUND};
+        border-radius: 6px;
         padding: 0;
     }}
     QHeaderView::section {{
-        background: {SURFACE_ALT};
+        background: {WINDOW_BACKGROUND};
         border: 0;
         border-bottom: 1px solid {BORDER};
-        color: {TEXT_MUTED};
+        color: {TEXT_SECONDARY};
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 600;
         padding: 8px;
-        text-transform: uppercase;
     }}
     QScrollArea {{
         border: 0;
         background: transparent;
     }}
-    QScrollArea#workspaceScroll {{
-        background: transparent;
-    }}
+    /* Checkbox */
     QCheckBox {{
         spacing: 8px;
     }}
     QCheckBox::indicator {{
         width: 16px;
         height: 16px;
-        border-radius: 5px;
+        border-radius: 4px;
         border: 1px solid {BORDER};
         background: {SURFACE};
     }}
@@ -276,19 +274,19 @@ def build_stylesheet() -> str:
     QTabWidget::pane {{
         border: 0;
     }}
-    /* 滚动条 */
+    /* Scrollbar */
     QScrollBar:vertical {{
         background: transparent;
         width: 6px;
         margin: 2px;
     }}
     QScrollBar::handle:vertical {{
-        background: rgba(180, 190, 205, 0.45);
+        background: rgba(148, 163, 184, 0.35);
         border-radius: 3px;
         min-height: 28px;
     }}
     QScrollBar::handle:vertical:hover {{
-        background: rgba(160, 170, 185, 0.7);
+        background: rgba(148, 163, 184, 0.6);
     }}
     QScrollBar:horizontal {{
         background: transparent;
@@ -296,14 +294,13 @@ def build_stylesheet() -> str:
         margin: 2px;
     }}
     QScrollBar::handle:horizontal {{
-        background: rgba(180, 190, 205, 0.45);
+        background: rgba(148, 163, 184, 0.35);
         border-radius: 3px;
         min-width: 28px;
     }}
     QScrollBar::handle:horizontal:hover {{
-        background: rgba(160, 170, 185, 0.7);
+        background: rgba(148, 163, 184, 0.6);
     }}
-    /* 隐藏滚动条端部按钮 */
     QScrollBar::add-line, QScrollBar::sub-line {{
         height: 0; width: 0;
     }}

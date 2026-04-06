@@ -297,8 +297,8 @@ class GlobalRulePage(QWidget):
             card_widget = GlobalRuleTargetCard(environment_id, tool_id)
             card_widget.assignment_changed.connect(self._handle_assignment_changed)
             card_widget.sync_requested.connect(self._emit_sync_one)
-            row = index // 2
-            column = index % 2
+            row = index // 3
+            column = index % 3
             grid.addWidget(card_widget, row, column)
             self._target_cards[(environment_id, tool_id)] = card_widget
         card.body_layout.addLayout(grid)
@@ -336,6 +336,7 @@ class GlobalRulePage(QWidget):
         profiles_busy: bool,
         assignments_busy: bool,
         sync_busy: bool,
+        busy_targets: set[tuple[str, str]] = frozenset(),
     ) -> None:
         self._is_busy = refresh_busy or profiles_busy or assignments_busy or sync_busy
         self.refresh_button.set_busy(refresh_busy)
@@ -348,8 +349,9 @@ class GlobalRulePage(QWidget):
         self.delete_button.setDisabled(self._is_busy)
         self.search_input.setDisabled(self._is_busy)
         self.profile_list.setDisabled(self._is_busy)
-        for card in self._target_cards.values():
-            card.set_busy(self._is_busy)
+        for (env_id, tool_id), card in self._target_cards.items():
+            target_busy = sync_busy or (env_id, tool_id) in busy_targets
+            card.set_busy(self._is_busy or target_busy)
         self._refresh_dirty_state()
 
     def _refresh_profile_list(self) -> None:

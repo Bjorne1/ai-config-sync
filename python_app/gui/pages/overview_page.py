@@ -28,8 +28,8 @@ class OverviewPage(QWidget):
     def _build_metric_strip(self) -> QWidget:
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(16)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(20)
         self.metrics = [MetricCard(label) for label in ("已配置 Skills", "已配置 Commands", "同步目标", "待处理")]
         for index, card in enumerate(self.metrics):
             grid.addWidget(card, 0, index)

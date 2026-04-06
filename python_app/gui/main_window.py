@@ -7,20 +7,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from .dashboard import build_issue_rows, build_resource_rows, count_cleanup_candidates, overview_stats
-from .event_filters import WheelBlocker
 from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
 from .pages.global_rule_page import GlobalRulePage
 from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
-from .pages.skill_upstream_page import SkillUpstreamPage
 from .pages.tools_page import ToolsPage
 from .theme import build_stylesheet
 from .widgets import NavButton
@@ -28,14 +25,13 @@ from .widgets import NavButton
 PAGE_KEYS = (
     "overview",
     "skills",
-    "skillUpstreams",
     "commands",
     "globalRules",
     "config",
     "cleanup",
     "tools",
 )
-PAGE_LABELS = ("概览", "Skills", "Skills 上游", "Commands", "全局规则", "配置", "清理", "工具更新")
+PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "配置", "清理", "工具更新")
 
 
 class MainWindow(QMainWindow):
@@ -92,30 +88,14 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(180)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(14, 18, 14, 18)
+        layout.setContentsMargins(12, 16, 12, 16)
         layout.setSpacing(0)
-        hero = QFrame()
-        hero.setObjectName("sidebarHero")
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(16, 18, 16, 18)
-        hero_layout.setSpacing(6)
-        title = QLabel("Boss Console\nRenderer")
+        title = QLabel("AI Config Sync")
         title.setObjectName("sidebarTitle")
-        title.setWordWrap(True)
-        intro = QLabel("工业灰 + 安全橙\n紧凑布局，清晰易读。")
-        intro.setObjectName("sidebarIntro")
-        intro.setWordWrap(True)
-        hero_layout.addWidget(title)
-        hero_layout.addWidget(intro)
-        layout.addWidget(hero)
-        layout.addSpacing(16)
-        section_label = QLabel("Navigation")
-        section_label.setObjectName("sidebarSectionLabel")
-        layout.addWidget(section_label)
-        layout.addSpacing(8)
-        # 导航按钮分组: 主功能 / 资源管理 / 系统
+        layout.addWidget(title)
+        layout.addSpacing(20)
         NAV_GROUP_BREAKS = {"config", "cleanup"}
         self.nav_buttons: dict[str, NavButton] = {}
         for key, label in zip(PAGE_KEYS, PAGE_LABELS, strict=True):
@@ -138,29 +118,20 @@ class MainWindow(QMainWindow):
         self.error_banner = QLabel("")
         self.error_banner.setWordWrap(True)
         self.error_banner.hide()
-        self.error_banner.setStyleSheet("border: 1px solid #b91c1c; border-radius: 14px; padding: 10px 12px; background: #fee2e2; color: #991b1b;")
+        self.error_banner.setStyleSheet(
+            "border: 1px solid #dc2626; border-radius: 8px;"
+            " padding: 10px 12px; background: #fee2e2; color: #991b1b;"
+        )
         layout.addWidget(self.error_banner)
-        self.workspace_scroll = QScrollArea()
-        self.workspace_scroll.setObjectName("workspaceScroll")
-        self.workspace_scroll.setWidgetResizable(True)
-        layout.addWidget(self.workspace_scroll, 1)
-        self._workspace_wheel_blocker = WheelBlocker(self.workspace_scroll)
-        self.workspace_scroll.installEventFilter(self._workspace_wheel_blocker)
-        self.workspace_scroll.viewport().installEventFilter(self._workspace_wheel_blocker)
-        container = QWidget()
-        self.workspace_scroll.setWidget(container)
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pageStack")
-        container_layout.addWidget(self.pages)
+        layout.addWidget(self.pages, 1)
         self._create_pages()
         return wrapper
 
     def _create_pages(self) -> None:
         self.overview_page = OverviewPage()
         self.skills_page = ResourcePage("skills")
-        self.skill_upstream_page = SkillUpstreamPage()
         self.commands_page = ResourcePage("commands")
         self.global_rule_page = GlobalRulePage()
         self.config_page = ConfigPage()
@@ -169,7 +140,6 @@ class MainWindow(QMainWindow):
         page_list = [
             self.overview_page,
             self.skills_page,
-            self.skill_upstream_page,
             self.commands_page,
             self.global_rule_page,
             self.config_page,
@@ -182,10 +152,10 @@ class MainWindow(QMainWindow):
         self.overview_page.sync_all_requested.connect(self.sync_all_requested.emit)
         self.skills_page.rescan_requested.connect(self.rescan_requested.emit)
         self.skills_page.sync_requested.connect(self.sync_selected_requested.emit)
-        self.skill_upstream_page.add_requested.connect(self.skill_add_requested.emit)
-        self.skill_upstream_page.set_url_requested.connect(self.skill_set_url_requested.emit)
-        self.skill_upstream_page.check_requested.connect(self.skill_check_requested.emit)
-        self.skill_upstream_page.upgrade_requested.connect(self.skill_upgrade_requested.emit)
+        self.skills_page.add_skill_requested.connect(self.skill_add_requested.emit)
+        self.skills_page.set_url_requested.connect(self.skill_set_url_requested.emit)
+        self.skills_page.check_upstream_requested.connect(self.skill_check_requested.emit)
+        self.skills_page.upgrade_upstream_requested.connect(self.skill_upgrade_requested.emit)
         self.commands_page.rescan_requested.connect(self.rescan_requested.emit)
         self.commands_page.sync_requested.connect(self.sync_selected_requested.emit)
         self.global_rule_page.refresh_requested.connect(self.global_rule_refresh_requested.emit)
@@ -209,14 +179,6 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for page_key, button in self.nav_buttons.items():
             button.set_active(page_key == key)
-        self._update_workspace_scroll_policy(key)
-
-    def _update_workspace_scroll_policy(self, key: str) -> None:
-        self.workspace_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.workspace_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.workspace_scroll.verticalScrollBar().setEnabled(True)
-        self.workspace_scroll.horizontalScrollBar().setEnabled(True)
-        self._workspace_wheel_blocker.set_enabled(False)
 
     def set_snapshot(self, snapshot: dict[str, object]) -> None:
         self.snapshot = deepcopy(snapshot)
@@ -239,7 +201,7 @@ class MainWindow(QMainWindow):
         self._refresh_busy()
 
     def set_skill_update_results(self, results: list[dict[str, object]]) -> None:
-        self.skill_upstream_page.set_update_results(results)
+        self.skills_page.set_update_results(results)
         self._refresh_busy()
 
     def set_logs(self, logs: list[dict[str, str]]) -> None:
@@ -285,7 +247,7 @@ class MainWindow(QMainWindow):
             self.snapshot["status"]["environments"], issues, self.logs,
         )
         self.skills_page.set_rows(self._resource_rows("skills"))
-        self.skill_upstream_page.set_context(
+        self.skills_page.set_upstream_context(
             self.snapshot["inventory"]["skills"],
             self.snapshot.get("skillUpstreams", {}),
         )
@@ -314,23 +276,38 @@ class MainWindow(QMainWindow):
         )
 
     def _refresh_busy(self) -> None:
+        upstream_busy = (
+            self._busy("skillAdd")
+            or self._busy("skillSetUrl")
+            or self._busy("skillCheck")
+            or self._busy("skillUpgrade")
+        )
         self.overview_page.set_busy(self._busy("refresh"), self._busy("syncAll"))
-        self.skills_page.set_busy(self._busy("scanSkills"), self._busy("syncSkills"))
-        self.skill_upstream_page.set_busy(
-            self._busy("skillAdd") or self._busy("skillSetUrl") or self._busy("skillCheck") or self._busy("skillUpgrade")
+        self.skills_page.set_busy(
+            self._busy("scanSkills"),
+            self._busy("syncSkills"),
+            upstream_busy,
         )
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
+        busy_gr_targets: set[tuple[str, str]] = set()
+        for suffix in self._busy_names("syncGlobalRule"):
+            parts = suffix.split(":", 1)
+            if len(parts) == 2:
+                busy_gr_targets.add((parts[0], parts[1]))
         self.global_rule_page.set_busy(
             self._busy("refreshGlobalRules"),
             self._busy("saveGlobalRuleProfiles"),
             self._busy("saveGlobalRuleAssignments"),
             self._busy("syncGlobalRules"),
+            busy_gr_targets,
         )
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
         self.cleanup_page.set_busy(self._busy("cleanup"))
+        busy_tools = self._busy_names("updateTool")
         self.tools_page.set_busy(
-            self._busy("updateTools") or self._busy("updateTool"),
+            self._busy("updateTools"),
             self._busy("saveToolDefinitions"),
+            busy_tools,
         )
 
     def _busy(self, key: str) -> bool:
@@ -338,3 +315,11 @@ class MainWindow(QMainWindow):
             return self.busy[key]
         snake = "".join([f"_{char.lower()}" if char.isupper() else char for char in key]).lstrip("_")
         return self.busy.get(snake, False)
+
+    def _busy_names(self, prefix: str) -> set[str]:
+        result: set[str] = set()
+        tag = f"{prefix}:"
+        for key, value in self.busy.items():
+            if value and key.startswith(tag):
+                result.add(key[len(tag):])
+        return result

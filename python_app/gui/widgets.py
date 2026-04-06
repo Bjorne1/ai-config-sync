@@ -1,10 +1,8 @@
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
@@ -22,26 +20,11 @@ from .header_views import GroupedHeaderView
 from .theme import ACCENT, BORDER, STATE_COLORS, SURFACE, create_mono_font
 
 
-# 阴影参数
-_SHADOW_BLUR_RADIUS = 18
-_SHADOW_Y_OFFSET = 3
-_SHADOW_COLOR = QColor(0, 0, 0, 25)
-
-
-def _apply_card_shadow(widget: QWidget) -> None:
-    """为卡片添加微弱投影效果"""
-    shadow = QGraphicsDropShadowEffect(widget)
-    shadow.setBlurRadius(_SHADOW_BLUR_RADIUS)
-    shadow.setOffset(0, _SHADOW_Y_OFFSET)
-    shadow.setColor(_SHADOW_COLOR)
-    widget.setGraphicsEffect(shadow)
-
 
 class CardFrame(QFrame):
     def __init__(self, title: str = "", detail: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("card")
-        _apply_card_shadow(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(10)
@@ -62,14 +45,12 @@ class CardFrame(QFrame):
 class MetricCard(QFrame):
     _STYLE_NORMAL = (
         f"QFrame#metricCard {{ background: {SURFACE};"
-        f" border: 1px solid rgba(184, 196, 209, 0.4);"
-        f" border-bottom: 2px solid rgba(184, 196, 209, 0.25);"
+        f" border: 1px solid {BORDER};"
         f" border-radius: 8px; }}"
     )
     _STYLE_HOVER = (
         f"QFrame#metricCard {{ background: {SURFACE};"
         f" border: 1px solid {ACCENT};"
-        f" border-bottom: 2px solid {ACCENT};"
         f" border-radius: 8px; }}"
     )
 
@@ -78,7 +59,6 @@ class MetricCard(QFrame):
         self.setObjectName("metricCard")
         self.setMinimumHeight(100)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-        _apply_card_shadow(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(4)
@@ -117,8 +97,9 @@ class BadgeLabel(QLabel):
     def set_state(self, state: str) -> None:
         fg, bg = STATE_COLORS.get(state, STATE_COLORS["idle"])
         self.setStyleSheet(
-            f"border: 1px solid {fg}; border-radius: 8px;"
-            f" padding: 3px 10px; color: {fg}; background: {bg};"
+            f"border: 1px solid {fg}; border-radius: 4px;"
+            f" padding: 2px 8px; color: {fg}; background: {bg};"
+            f" font-size: 11px;"
         )
 
 

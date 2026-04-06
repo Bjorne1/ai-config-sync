@@ -29,6 +29,8 @@ class AppController(QObject):
         self.logs: list[dict[str, str]] = []
         self.busy: dict[str, bool] = {"initial": True}
         self._workers: list[TaskThread] = []
+        self._accumulated_tool_results: list[dict[str, object]] = []
+        self._accumulated_gr_results: list[dict[str, object]] = []
         self._connect_signals()
 
     def start(self) -> None:
@@ -176,16 +178,24 @@ class AppController(QObject):
 
     def _sync_global_rules(self, payload: object) -> None:
         sync_request = self._parse_global_rule_sync_payload(payload)
+        targets = sync_request["targets"]
+        assignments = sync_request["assignments"]
+
+        if targets and len(targets) == 1 and assignments is None:
+            target = targets[0]
+            key = f"syncGlobalRule:{target['environmentId']}:{target['toolId']}"
+
+            def task() -> object:
+                return self.service.sync_global_rules(targets, assignments)
+
+            self._run_task(key, "同步全局规则", task, self._after_global_rule_sync_one)
+            return
 
         def task() -> object:
-            return self.service.sync_global_rules(sync_request["targets"], sync_request["assignments"])
+            return self.service.sync_global_rules(targets, assignments)
 
-        self._run_task(
-            "syncGlobalRules",
-            "同步全局规则",
-            task,
-            self._after_global_rule_sync,
-        )
+        self._accumulated_gr_results = []
+        self._run_task("syncGlobalRules", "同步全局规则", task, self._after_global_rule_sync)
 
     def _after_global_rule_sync(self, result: list[dict[str, object]]) -> None:
         success = sum(1 for item in result if item.get("success"))
@@ -196,6 +206,17 @@ class AppController(QObject):
         )
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRules")
 
+    def _after_global_rule_sync_one(self, result: list[dict[str, object]]) -> None:
+        self._accumulated_gr_results.extend(result)
+        all_results = self._accumulated_gr_results
+        success = sum(1 for item in all_results if item.get("success"))
+        skipped = sum(1 for item in all_results if item.get("skipped"))
+        failed = len(all_results) - success - skipped
+        self.window.set_last_sync_summary(
+            f"全局规则 成功 {success} · 跳过 {skipped} · 失败 {failed}"
+        )
+        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRuleOne")
+
     def _cleanup(self) -> None:
         self._run_task("cleanup", "执行清理", self.service.cleanup_invalid, self._after_cleanup)
 
@@ -205,6 +226,7 @@ class AppController(QObject):
 
     def _update_tools(self, payload: object) -> None:
         target_versions = self._parse_target_versions(payload)
+        self._accumulated_tool_results = []
         self._run_task(
             "updateTools",
             "更新工具",
@@ -219,11 +241,17 @@ class AppController(QObject):
     def _update_tool(self, name: str, target_version: object) -> None:
         resolved_version = str(target_version or "").strip() or None
         self._run_task(
-            "updateTool",
+            f"updateTool:{name}",
             f"更新工具：{name}",
             lambda: self.service.update_tool(name, resolved_version),
-            self._after_update_tools,
+            self._after_update_tool,
         )
+
+    def _after_update_tool(self, results: list[dict[str, object]]) -> None:
+        self._accumulated_tool_results.extend(results)
+        self.window.set_tool_results(list(self._accumulated_tool_results))
+        key = f"refreshAfterUpdateTool:{results[0]['name']}" if results else "refreshAfterUpdateTool"
+        self.refresh_snapshot(reset_error=False, busy_key=key)
 
     def _save_tool_definitions(self, definitions: dict[str, dict[str, str]]) -> None:
         self._run_task(
