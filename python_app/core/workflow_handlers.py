@@ -463,3 +463,363 @@ class SuperpowersCodexHandler(WorkflowHandler):
         except Exception:
             pass
         return None
+
+
+# ---------------------------------------------------------------------------
+# Agent Skills — constants
+# ---------------------------------------------------------------------------
+
+AGENT_SKILLS_REPO = "https://github.com/addyosmani/agent-skills.git"
+AGENT_SKILLS_DIR_NAME = "agent-skills"
+AGENT_SKILLS_MANIFEST = ".agent-skills-commands.json"
+
+CODEX_AGENT_SKILLS_DIR_NAME = "agent-skills"
+CODEX_AGENT_SKILLS_SENTINEL_BEGIN = "<!-- WORKFLOW:agent-skills:BEGIN -->"
+CODEX_AGENT_SKILLS_SENTINEL_END = "<!-- WORKFLOW:agent-skills:END -->"
+
+CODEX_AGENT_SKILLS_BOOTSTRAP = f"""{CODEX_AGENT_SKILLS_SENTINEL_BEGIN}
+## Agent Skills System
+
+<EXTREMELY_IMPORTANT>
+You have agent-skills installed. Agent Skills provide production-grade engineering workflows
+(spec, plan, build, test, review, ship). Before starting any task, check `~/.codex/agent-skills/skills/`
+for applicable workflows and follow them step by step.
+</EXTREMELY_IMPORTANT>
+{CODEX_AGENT_SKILLS_SENTINEL_END}"""
+
+
+# ---------------------------------------------------------------------------
+# AgentSkillsClaudeHandler
+# ---------------------------------------------------------------------------
+
+
+class AgentSkillsClaudeHandler(WorkflowHandler):
+    """Manages agent-skills for Claude Code via clone + commands copy."""
+
+    def detect_status(self, ctx: TargetContext) -> TargetStatus:
+        claude_dir = _claude_dir(ctx)
+        if not claude_dir.exists():
+            return TargetStatus(available=False, installed=False, enabled=False,
+                                error="Claude Code 目录不存在")
+        skills_dir = claude_dir / AGENT_SKILLS_DIR_NAME
+        is_installed = skills_dir.exists() and skills_dir.is_dir()
+        version = None
+        commit = None
+        if is_installed:
+            version = self._detect_version(skills_dir)
+            commit = self._detect_commit(skills_dir)
+        is_enabled = self._commands_deployed(claude_dir)
+        return TargetStatus(
+            available=True,
+            installed=is_installed,
+            enabled=is_enabled,
+            version=version,
+            installed_commit=commit,
+        )
+
+    def install(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        skills_dir = claude_dir / AGENT_SKILLS_DIR_NAME
+        if skills_dir.exists():
+            _run_git(["git", "-C", str(skills_dir), "pull", "--ff-only"], ctx=ctx)
+        else:
+            skills_dir.parent.mkdir(parents=True, exist_ok=True)
+            result = _run_git(
+                ["git", "clone", AGENT_SKILLS_REPO, str(skills_dir)],
+                ctx=ctx,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
+        self._deploy_commands(claude_dir, skills_dir)
+        version = self._detect_version(skills_dir)
+        commit = self._detect_commit(skills_dir)
+        return {
+            "success": True,
+            "message": f"已安装 agent-skills{f' v{version}' if version else ''}",
+            "version": version,
+            "commit": commit,
+        }
+
+    def uninstall(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        self._withdraw_commands(claude_dir)
+        skills_dir = claude_dir / AGENT_SKILLS_DIR_NAME
+        if skills_dir.exists():
+            _rmtree_force(skills_dir)
+        return {"success": True, "message": "已卸载 agent-skills"}
+
+    def enable(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        skills_dir = claude_dir / AGENT_SKILLS_DIR_NAME
+        if not skills_dir.exists():
+            raise RuntimeError("agent-skills 未安装，请先安装。")
+        self._deploy_commands(claude_dir, skills_dir)
+        return {"success": True, "message": "已启用 agent-skills"}
+
+    def disable(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        self._withdraw_commands(claude_dir)
+        return {"success": True, "message": "已禁用 agent-skills"}
+
+    def upgrade(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        skills_dir = claude_dir / AGENT_SKILLS_DIR_NAME
+        if not skills_dir.exists():
+            raise RuntimeError("agent-skills 未安装，请先安装再升级。")
+        old_version = self._detect_version(skills_dir)
+        result = _run_git(["git", "-C", str(skills_dir), "pull", "--ff-only"], ctx=ctx)
+        if result.returncode != 0:
+            raise RuntimeError(f"git pull failed: {result.stderr.strip()}")
+        self._deploy_commands(claude_dir, skills_dir)
+        new_version = self._detect_version(skills_dir)
+        new_commit = self._detect_commit(skills_dir)
+        old_ver = old_version or "unknown"
+        new_ver = new_version or "unknown"
+        return {
+            "success": True,
+            "message": f"已升级 agent-skills {old_ver} → {new_ver}",
+            "version": new_version,
+            "commit": new_commit,
+        }
+
+    # -- helpers --
+
+    def _deploy_commands(self, claude_dir: Path, skills_dir: Path) -> None:
+        """Copy command .md files from repo .claude/commands/ to ~/.claude/commands/."""
+        src_dir = skills_dir / ".claude" / "commands"
+        if not src_dir.exists():
+            return
+        dst_dir = claude_dir / "commands"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+        for f in sorted(src_dir.iterdir()):
+            if f.is_file() and f.suffix == ".md":
+                shutil.copy2(f, dst_dir / f.name)
+                copied.append(f.name)
+        manifest_path = claude_dir / AGENT_SKILLS_MANIFEST
+        _write_json(manifest_path, {"commands": copied})
+
+    def _withdraw_commands(self, claude_dir: Path) -> None:
+        """Remove previously deployed command files."""
+        manifest_path = claude_dir / AGENT_SKILLS_MANIFEST
+        data = _read_json(manifest_path)
+        if not isinstance(data, dict):
+            return
+        commands = data.get("commands", [])
+        cmd_dir = claude_dir / "commands"
+        for name in commands:
+            target = cmd_dir / name
+            if target.exists():
+                target.unlink()
+        if manifest_path.exists():
+            manifest_path.unlink()
+
+    def _commands_deployed(self, claude_dir: Path) -> bool:
+        manifest_path = claude_dir / AGENT_SKILLS_MANIFEST
+        data = _read_json(manifest_path)
+        if not isinstance(data, dict):
+            return False
+        return bool(data.get("commands"))
+
+    def _detect_version(self, skills_dir: Path) -> str | None:
+        pkg_json = skills_dir / "package.json"
+        if pkg_json.exists():
+            try:
+                data = json.loads(pkg_json.read_text(encoding="utf-8"))
+                version = str(data.get("version") or "").strip()
+                if version:
+                    return version
+            except Exception:
+                pass
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(skills_dir), "describe", "--tags", "--abbrev=0"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def _detect_commit(self, skills_dir: Path) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(skills_dir), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+
+# ---------------------------------------------------------------------------
+# AgentSkillsCodexHandler
+# ---------------------------------------------------------------------------
+
+
+class AgentSkillsCodexHandler(WorkflowHandler):
+    """Manages agent-skills for Codex via clone + AGENTS.md injection."""
+
+    def detect_status(self, ctx: TargetContext) -> TargetStatus:
+        codex_dir = Path(ctx.home_dir) / ".codex"
+        if not codex_dir.exists():
+            return TargetStatus(available=False, installed=False, enabled=False,
+                                error="Codex 目录不存在")
+        skills_dir = codex_dir / CODEX_AGENT_SKILLS_DIR_NAME
+        is_installed = skills_dir.exists() and skills_dir.is_dir()
+        version = None
+        commit = None
+        if is_installed:
+            version = self._detect_version(skills_dir)
+            commit = self._detect_commit(skills_dir)
+        agents_md = codex_dir / "AGENTS.md"
+        is_enabled = self._has_sentinel(agents_md)
+        return TargetStatus(
+            available=True,
+            installed=is_installed,
+            enabled=is_enabled,
+            version=version,
+            installed_commit=commit,
+        )
+
+    def install(self, ctx: TargetContext) -> dict[str, object]:
+        codex_dir = Path(ctx.home_dir) / ".codex"
+        skills_dir = codex_dir / CODEX_AGENT_SKILLS_DIR_NAME
+        if skills_dir.exists():
+            _run_git(["git", "-C", str(skills_dir), "pull", "--ff-only"], ctx=ctx)
+        else:
+            skills_dir.parent.mkdir(parents=True, exist_ok=True)
+            result = _run_git(
+                ["git", "clone", AGENT_SKILLS_REPO, str(skills_dir)],
+                ctx=ctx,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
+        agents_md = codex_dir / "AGENTS.md"
+        if not self._has_sentinel(agents_md):
+            self._inject_bootstrap(agents_md)
+        version = self._detect_version(skills_dir)
+        commit = self._detect_commit(skills_dir)
+        return {
+            "success": True,
+            "message": f"已安装 agent-skills{f' v{version}' if version else ''}",
+            "version": version,
+            "commit": commit,
+        }
+
+    def uninstall(self, ctx: TargetContext) -> dict[str, object]:
+        codex_dir = Path(ctx.home_dir) / ".codex"
+        skills_dir = codex_dir / CODEX_AGENT_SKILLS_DIR_NAME
+        if skills_dir.exists():
+            _rmtree_force(skills_dir)
+        agents_md = codex_dir / "AGENTS.md"
+        self._remove_bootstrap(agents_md)
+        return {"success": True, "message": "已卸载 agent-skills"}
+
+    def enable(self, ctx: TargetContext) -> dict[str, object]:
+        agents_md = Path(ctx.home_dir) / ".codex" / "AGENTS.md"
+        if self._has_sentinel(agents_md):
+            return {"success": True, "message": "agent-skills 已处于启用状态"}
+        self._inject_bootstrap(agents_md)
+        return {"success": True, "message": "已启用 agent-skills"}
+
+    def disable(self, ctx: TargetContext) -> dict[str, object]:
+        agents_md = Path(ctx.home_dir) / ".codex" / "AGENTS.md"
+        self._remove_bootstrap(agents_md)
+        return {"success": True, "message": "已禁用 agent-skills"}
+
+    def upgrade(self, ctx: TargetContext) -> dict[str, object]:
+        codex_dir = Path(ctx.home_dir) / ".codex"
+        skills_dir = codex_dir / CODEX_AGENT_SKILLS_DIR_NAME
+        if not skills_dir.exists():
+            raise RuntimeError("agent-skills 未安装，请先安装再升级。")
+        old_version = self._detect_version(skills_dir)
+        result = _run_git(["git", "-C", str(skills_dir), "pull", "--ff-only"], ctx=ctx)
+        if result.returncode != 0:
+            raise RuntimeError(f"git pull failed: {result.stderr.strip()}")
+        new_version = self._detect_version(skills_dir)
+        new_commit = self._detect_commit(skills_dir)
+        old_ver = old_version or "unknown"
+        new_ver = new_version or "unknown"
+        return {
+            "success": True,
+            "message": f"已升级 agent-skills {old_ver} → {new_ver}",
+            "version": new_version,
+            "commit": new_commit,
+        }
+
+    # -- helpers --
+
+    def _has_sentinel(self, agents_md: Path) -> bool:
+        if not agents_md.exists():
+            return False
+        content = agents_md.read_text(encoding="utf-8")
+        return CODEX_AGENT_SKILLS_SENTINEL_BEGIN in content
+
+    def _inject_bootstrap(self, agents_md: Path) -> None:
+        agents_md.parent.mkdir(parents=True, exist_ok=True)
+        existing = ""
+        if agents_md.exists():
+            existing = agents_md.read_text(encoding="utf-8")
+        separator = "\n\n" if existing.strip() else ""
+        agents_md.write_text(
+            existing.rstrip() + separator + CODEX_AGENT_SKILLS_BOOTSTRAP + "\n",
+            encoding="utf-8",
+        )
+
+    def _remove_bootstrap(self, agents_md: Path) -> None:
+        if not agents_md.exists():
+            return
+        content = agents_md.read_text(encoding="utf-8")
+        if CODEX_AGENT_SKILLS_SENTINEL_BEGIN not in content:
+            return
+        lines = content.split("\n")
+        result_lines: list[str] = []
+        inside = False
+        for line in lines:
+            if CODEX_AGENT_SKILLS_SENTINEL_BEGIN in line:
+                inside = True
+                continue
+            if inside and CODEX_AGENT_SKILLS_SENTINEL_END in line:
+                inside = False
+                continue
+            if not inside:
+                result_lines.append(line)
+        cleaned = "\n".join(result_lines).strip()
+        agents_md.write_text(cleaned + "\n" if cleaned else "", encoding="utf-8")
+
+    def _detect_version(self, skills_dir: Path) -> str | None:
+        pkg_json = skills_dir / "package.json"
+        if pkg_json.exists():
+            try:
+                data = json.loads(pkg_json.read_text(encoding="utf-8"))
+                version = str(data.get("version") or "").strip()
+                if version:
+                    return version
+            except Exception:
+                pass
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(skills_dir), "describe", "--tags", "--abbrev=0"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def _detect_commit(self, skills_dir: Path) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(skills_dir), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None

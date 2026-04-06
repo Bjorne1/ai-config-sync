@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .workflow_handlers import (
+    AgentSkillsClaudeHandler,
+    AgentSkillsCodexHandler,
     SuperpowersClaudeHandler,
     SuperpowersCodexHandler,
     WorkflowHandler,
@@ -16,6 +18,14 @@ def _superpowers_handler_factory(tool_id: str) -> WorkflowHandler:
     if tool_id == "codex":
         return SuperpowersCodexHandler()
     raise ValueError(f"superpowers does not support tool: {tool_id}")
+
+
+def _agent_skills_handler_factory(tool_id: str) -> WorkflowHandler:
+    if tool_id == "claude":
+        return AgentSkillsClaudeHandler()
+    if tool_id == "codex":
+        return AgentSkillsCodexHandler()
+    raise ValueError(f"agent-skills does not support tool: {tool_id}")
 
 
 @dataclass(frozen=True)
@@ -36,5 +46,13 @@ WORKFLOW_REGISTRY: dict[str, WorkflowDefinition] = {
         repo_url="https://github.com/obra/superpowers",
         supported_tools=("claude", "codex"),
         handler_factory=_superpowers_handler_factory,
+    ),
+    "agent-skills": WorkflowDefinition(
+        workflow_id="agent-skills",
+        label="Agent Skills",
+        description="Production-grade engineering workflows (spec, plan, build, test, review, ship)",
+        repo_url="https://github.com/addyosmani/agent-skills",
+        supported_tools=("claude", "codex"),
+        handler_factory=_agent_skills_handler_factory,
     ),
 }
