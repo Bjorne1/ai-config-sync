@@ -12,10 +12,10 @@
     },
     {
       "id": "4ffb55bb97d54a9fa4a0f6ab86920b34",
-      "name": "Custom-Claude-Win",
+      "name": "Custom-Claude-Win-0405",
       "description": "",
-      "file": "Custom-Claude-Win.md",
-      "updatedAt": "2026-04-06T15:54:30",
+      "file": "Custom-Claude-Win-0405.md",
+      "updatedAt": "2026-04-06T19:57:34",
       "platform": "windows",
       "toolScope": "claude"
     },
@@ -39,10 +39,10 @@
     },
     {
       "id": "4bc4d028ebab4a17b61788089d4b1eca",
-      "name": "Custom-Codex-Win-1.1",
+      "name": "Custom-Codex-Win-0405",
       "description": "优化输出语言，减少黑话",
-      "file": "Custom-Codex-Win-1.1.md",
-      "updatedAt": "2026-04-06T15:55:07",
+      "file": "Custom-Codex-Win-0405.md",
+      "updatedAt": "2026-04-06T19:57:08",
       "platform": "windows",
       "toolScope": "codex"
     },
@@ -60,7 +60,7 @@
       "name": "Custom-Claude-WSL-0405",
       "description": "新增git workflow",
       "file": "Custom-Claude-WSL-0405.md",
-      "updatedAt": "2026-04-06T15:55:42",
+      "updatedAt": "2026-04-06T19:56:10",
       "platform": "wsl",
       "toolScope": "claude"
     },
@@ -81,8 +81,8 @@
       "gemini": null
     },
     "wsl": {
-      "claude": "31df484bbd9649bab66a2387ce4217e1",
-      "codex": "13051453a75b46b89e0f5f7c0be5336b",
+      "claude": "432e3e5de99244f2a8c1ec6fdaceae39",
+      "codex": "0051193ac8944870a4503897f7fec61c",
       "gemini": null
     }
   }

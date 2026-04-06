@@ -30,7 +30,7 @@ Do not propose follow-up tasks or enhancements at the end of your final answer.
 
 ## Engineering Quality Baseline
 
-- Follow SOLID, DRY, separation of concerns, and YAGNI.
+- Follow SOLID, DRY (three-strike rule: tolerate two similar snippets; extract only when the same logic appears a third time), separation of concerns, and YAGNI.
 - Use clear naming and pragmatic abstractions; prefer self-documenting code—add concise comments only for critical or non-obvious logic.
 - Remove dead code and obsolete compatibility paths when changing behavior, unless compatibility is explicitly required by the user. Never write transitional or backward-compatible shim code that could hinder future refactoring.
 - Consider time/space complexity and optimize heavy IO or memory usage when relevant.
@@ -43,7 +43,7 @@ Do not propose follow-up tasks or enhancements at the end of your final answer.
 - **Function length**: 50 lines (excluding blanks). Exceeded → extract helper immediately.
 - **File size**: 500 lines. Exceeded → split by responsibility.
 - **Nesting depth**: 3 levels. Use early returns / guard clauses to flatten.
-- **Parameters**: 3 positional. More → use a config/options object.
+- **Parameters**: 6 positional. More → use a config/options object.
 - **Cyclomatic complexity**: 10 per function. More → decompose branching logic.
 - **No magic numbers**: extract to named constants (`MAX_RETRIES = 3`, not bare `3`).
 

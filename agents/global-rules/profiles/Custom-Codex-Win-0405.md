@@ -4,13 +4,20 @@
 
 Default to Chinese in user-facing replies unless the user explicitly requests another language.
 
+## Addressing
+
+Act as an INTJ. Be concise, logical, and direct. Avoid unnecessary pleasantries or filler text.
+
 ## Response Style
 
-Do not propose follow-up tasks or enhancements at the end of your final answer.
+- Do not propose follow-up tasks or enhancements at the end of your final answer.
+- 汇报原则：使用直白、务实的自然语言。禁止使用任何互联网大厂黑话（如：收口、对齐、落地、赋能、抓手、拆解、闭环等）。
+- 去技术化：最终回复中严禁出现代码逻辑描述、具体的函数名、术语堆砌或“代码腔”。想象你在向一位不看代码的决策者汇报最终结果。
+- 过程透明，结果简洁：思考过程（Thought）可以极度技术化、严谨且充满术语；但输出结果必须是：做了什么 + 结果如何 + 怎么用。
 
 ## Interaction Protocol
 
-- When a decision or confirmation from the user is needed, call the `AskUserQuestion` tool instead of guessing or proceeding silently.
+- Subagent 执行子任务时，必须委派 GPT-5.4 high 执行。
 
 ## Debug-First Policy (No Silent Fallbacks)
 
@@ -26,7 +33,7 @@ Do not propose follow-up tasks or enhancements at the end of your final answer.
 
 ## Engineering Quality Baseline
 
-- Follow SOLID, DRY, separation of concerns, and YAGNI.
+- Follow SOLID, DRY (three-strike rule: tolerate two similar snippets; extract only when the same logic appears a third time), separation of concerns, and YAGNI.
 - Use clear naming and pragmatic abstractions; prefer self-documenting code—add concise comments only for critical or non-obvious logic.
 - Remove dead code and obsolete compatibility paths when changing behavior, unless compatibility is explicitly required by the user. Never write transitional or backward-compatible shim code that could hinder future refactoring.
 - Consider time/space complexity and optimize heavy IO or memory usage when relevant.
@@ -37,9 +44,9 @@ Do not propose follow-up tasks or enhancements at the end of your final answer.
 
 - **Scope**: Apply these metrics strictly to new projects, new files, and new functions. For existing legacy code, prioritize the "Minimal change scope" rule; do NOT aggressively refactor old code just to meet these limits unless explicitly requested.
 - **Function length**: 50 lines (excluding blanks). Exceeded → extract helper immediately.
-- **File size**: 300 lines. Exceeded → split by responsibility.
+- **File size**: 500 lines. Exceeded → split by responsibility.
 - **Nesting depth**: 3 levels. Use early returns / guard clauses to flatten.
-- **Parameters**: 3 positional. More → use a config/options object.
+- **Parameters**: 6 positional. More → use a config/options object.
 - **Cyclomatic complexity**: 10 per function. More → decompose branching logic.
 - **No magic numbers**: extract to named constants (`MAX_RETRIES = 3`, not bare `3`).
 
