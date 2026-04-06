@@ -350,6 +350,8 @@ class AppController(QObject):
             "enable": "启用工作流",
             "disable": "禁用工作流",
             "upgrade": "升级工作流",
+            "link_skills": "链接 Skills",
+            "unlink_skills": "取消链接 Skills",
         }
         label = label_map.get(action, action)
         busy_key = f"workflowAction:{workflow_id}:{target_key}"

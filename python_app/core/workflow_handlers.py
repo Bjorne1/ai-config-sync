@@ -6,6 +6,7 @@ import shutil
 import stat
 import subprocess
 from abc import ABC, abstractmethod
+from .linker import create_symlink, remove_symlink
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,9 @@ class TargetStatus:
     version: str | None = None
     installed_commit: str | None = None
     error: str | None = None
+    skills_linkable: bool = False
+    skills_linked: bool = False
+    skills_total: int = 0
 
 
 class WorkflowHandler(ABC):
@@ -54,6 +58,97 @@ class WorkflowHandler(ABC):
 
     @abstractmethod
     def upgrade(self, ctx: TargetContext) -> dict[str, object]: ...
+
+    def workflow_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return None
+
+    def tool_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return None
+
+    def detect_skills_link_status(
+        self, ctx: TargetContext,
+    ) -> tuple[bool, bool, int]:
+        wf_dir = self.workflow_skills_dir(ctx)
+        tool_dir = self.tool_skills_dir(ctx)
+        if not wf_dir or not tool_dir or not wf_dir.exists():
+            return False, False, 0
+        skill_dirs = [d for d in wf_dir.iterdir() if d.is_dir()]
+        total = len(skill_dirs)
+        if total == 0:
+            return False, False, 0
+        if not tool_dir.exists():
+            return True, False, total
+        linked = 0
+        for d in skill_dirs:
+            target = tool_dir / d.name
+            if target.is_symlink():
+                try:
+                    if target.resolve() == d.resolve():
+                        linked += 1
+                except OSError:
+                    pass
+        return True, linked == total, total
+
+    def link_skills(self, ctx: TargetContext) -> dict[str, object]:
+        wf_dir = self.workflow_skills_dir(ctx)
+        tool_dir = self.tool_skills_dir(ctx)
+        if not wf_dir or not tool_dir:
+            raise RuntimeError("此工作流不支持 Skill 链接")
+        if not wf_dir.exists():
+            raise RuntimeError(f"工作流 skills 目录不存在: {wf_dir}")
+        tool_dir.mkdir(parents=True, exist_ok=True)
+        skill_dirs = [d for d in wf_dir.iterdir() if d.is_dir()]
+        created = 0
+        skipped = 0
+        for d in skill_dirs:
+            target = tool_dir / d.name
+            if target.is_symlink():
+                try:
+                    if target.resolve() == d.resolve():
+                        skipped += 1
+                        continue
+                except OSError:
+                    pass
+                remove_symlink(str(target))
+            elif target.exists():
+                raise RuntimeError(
+                    f"目标已存在且不是软链接: {target}（避免覆盖用户文件）",
+                )
+            result = create_symlink(str(d), str(target), is_directory=True)
+            if result.get("success"):
+                created += 1
+            elif result.get("permission"):
+                raise PermissionError(
+                    "创建软链接需要管理员权限或启用开发者模式。\n"
+                    "请以管理员身份运行，或在 Windows 设置 → 开发者选项中启用「开发人员模式」。"
+                )
+            else:
+                raise RuntimeError(result.get("message", "创建软链接失败"))
+        return {
+            "success": True,
+            "message": f"已链接 {created} 个 Skills（跳过 {skipped} 个）",
+        }
+
+    def unlink_skills(self, ctx: TargetContext) -> dict[str, object]:
+        wf_dir = self.workflow_skills_dir(ctx)
+        tool_dir = self.tool_skills_dir(ctx)
+        if not wf_dir or not tool_dir or not tool_dir.exists():
+            return {"success": True, "message": "无需清理"}
+        removed = 0
+        for entry in tool_dir.iterdir():
+            if not entry.is_symlink():
+                continue
+            try:
+                if entry.resolve().is_relative_to(wf_dir.resolve()):
+                    result = remove_symlink(str(entry))
+                    if result.get("success") and not result.get("skipped"):
+                        removed += 1
+            except (OSError, ValueError):
+                pass
+        return {
+            "success": True,
+            "message": f"已取消链接 {removed} 个 Skills",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +402,12 @@ You have superpowers. Superpowers teach you new skills and capabilities. RIGHT N
 
 class SuperpowersCodexHandler(WorkflowHandler):
 
+    def workflow_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return Path(ctx.home_dir) / ".codex" / CODEX_SUPERPOWERS_DIR_NAME / "skills"
+
+    def tool_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return Path(ctx.home_dir) / ".codex" / "skills"
+
     def detect_status(self, ctx: TargetContext) -> TargetStatus:
         codex_dir = Path(ctx.home_dir) / ".codex"
         if not codex_dir.exists():
@@ -321,12 +422,18 @@ class SuperpowersCodexHandler(WorkflowHandler):
             commit = self._detect_commit(sp_dir)
         agents_md = codex_dir / "AGENTS.md"
         is_enabled = self._has_sentinel(agents_md)
+        linkable, linked, total = (False, False, 0)
+        if is_installed:
+            linkable, linked, total = self.detect_skills_link_status(ctx)
         return TargetStatus(
             available=True,
             installed=is_installed,
             enabled=is_enabled,
             version=version,
             installed_commit=commit,
+            skills_linkable=linkable,
+            skills_linked=linked,
+            skills_total=total,
         )
 
     def install(self, ctx: TargetContext) -> dict[str, object]:
@@ -357,6 +464,7 @@ class SuperpowersCodexHandler(WorkflowHandler):
         }
 
     def uninstall(self, ctx: TargetContext) -> dict[str, object]:
+        self.unlink_skills(ctx)
         codex_dir = Path(ctx.home_dir) / ".codex"
         sp_dir = codex_dir / CODEX_SUPERPOWERS_DIR_NAME
         if sp_dir.exists():
@@ -663,6 +771,12 @@ class AgentSkillsClaudeHandler(WorkflowHandler):
 class AgentSkillsCodexHandler(WorkflowHandler):
     """Manages agent-skills for Codex via clone + AGENTS.md injection."""
 
+    def workflow_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return Path(ctx.home_dir) / ".codex" / CODEX_AGENT_SKILLS_DIR_NAME / "skills"
+
+    def tool_skills_dir(self, ctx: TargetContext) -> Path | None:
+        return Path(ctx.home_dir) / ".codex" / "skills"
+
     def detect_status(self, ctx: TargetContext) -> TargetStatus:
         codex_dir = Path(ctx.home_dir) / ".codex"
         if not codex_dir.exists():
@@ -677,12 +791,18 @@ class AgentSkillsCodexHandler(WorkflowHandler):
             commit = self._detect_commit(skills_dir)
         agents_md = codex_dir / "AGENTS.md"
         is_enabled = self._has_sentinel(agents_md)
+        linkable, linked, total = (False, False, 0)
+        if is_installed:
+            linkable, linked, total = self.detect_skills_link_status(ctx)
         return TargetStatus(
             available=True,
             installed=is_installed,
             enabled=is_enabled,
             version=version,
             installed_commit=commit,
+            skills_linkable=linkable,
+            skills_linked=linked,
+            skills_total=total,
         )
 
     def install(self, ctx: TargetContext) -> dict[str, object]:
@@ -711,6 +831,7 @@ class AgentSkillsCodexHandler(WorkflowHandler):
         }
 
     def uninstall(self, ctx: TargetContext) -> dict[str, object]:
+        self.unlink_skills(ctx)
         codex_dir = Path(ctx.home_dir) / ".codex"
         skills_dir = codex_dir / CODEX_AGENT_SKILLS_DIR_NAME
         if skills_dir.exists():

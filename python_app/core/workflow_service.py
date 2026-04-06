@@ -85,6 +85,9 @@ def scan_workflow_statuses(
                         "version": status.version,
                         "installedCommit": status.installed_commit,
                         "error": status.error,
+                        "skillsLinkable": status.skills_linkable,
+                        "skillsLinked": status.skills_linked,
+                        "skillsTotal": status.skills_total,
                     }
                 except Exception as exc:
                     targets[target_key] = {
@@ -125,6 +128,8 @@ def execute_workflow_action(
         "enable": handler.enable,
         "disable": handler.disable,
         "upgrade": handler.upgrade,
+        "link_skills": handler.link_skills,
+        "unlink_skills": handler.unlink_skills,
     }
     fn = action_map.get(action)
     if fn is None:

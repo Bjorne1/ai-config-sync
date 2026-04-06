@@ -85,25 +85,37 @@ class WorkflowTargetRow(QWidget):
         self._version_label.setText(f"v{version}" if version else "")
         error = target.get("error")
         self._error_label.setText(str(error) if error and state in ("error", "unavailable") else "")
-        self._rebuild_buttons(state)
+        self._rebuild_buttons(state, target)
 
     def set_busy(self, busy: bool) -> None:
         for button in self._buttons:
             button.set_busy(busy)
 
-    def _rebuild_buttons(self, state: str) -> None:
+    def _rebuild_buttons(self, state: str, target: dict[str, object]) -> None:
         for btn in self._buttons:
             btn.setParent(None)
             btn.deleteLater()
         self._buttons.clear()
+        skills_linkable = bool(target.get("skillsLinkable"))
+        skills_linked = bool(target.get("skillsLinked"))
         if state == "not_installed":
             self._add_button("安装", "primary", "install")
         elif state == "enabled":
             self._add_button("升级", "secondary", "upgrade")
+            if skills_linkable:
+                if skills_linked:
+                    self._add_button("取消链接Skills", "secondary", "unlink_skills")
+                else:
+                    self._add_button("链接Skills", "secondary", "link_skills")
             self._add_button("禁用", "secondary", "disable")
             self._add_button("卸载", "danger", "uninstall")
         elif state == "disabled":
             self._add_button("升级", "secondary", "upgrade")
+            if skills_linkable:
+                if skills_linked:
+                    self._add_button("取消链接Skills", "secondary", "unlink_skills")
+                else:
+                    self._add_button("链接Skills", "secondary", "link_skills")
             self._add_button("启用", "primary", "enable")
             self._add_button("卸载", "danger", "uninstall")
 
