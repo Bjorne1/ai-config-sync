@@ -5,6 +5,7 @@ from .config_page import ConfigPage
 from .overview_page import OverviewPage
 from .resource_page import ResourcePage
 from .tools_page import ToolsPage
+from .workflow_page import WorkflowPage
 
 __all__ = [
     "CleanupPage",
@@ -12,4 +13,5 @@ __all__ = [
     "OverviewPage",
     "ResourcePage",
     "ToolsPage",
+    "WorkflowPage",
 ]

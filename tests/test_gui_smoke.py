@@ -191,7 +191,7 @@ class GuiSmokeTests(unittest.TestCase):
 
     def test_main_window_has_7_pages(self) -> None:
         window = MainWindow()
-        self.assertEqual(window.pages.count(), 7)
+        self.assertEqual(window.pages.count(), 8)
         self.assertFalse(hasattr(window, "skill_upstream_page"))
 
     def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:

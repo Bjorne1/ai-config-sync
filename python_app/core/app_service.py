@@ -23,6 +23,8 @@ from .resource_service import scan_resources
 from .runtime_service import build_environment_list, build_wsl_runtime
 from .updater import build_update_tool_statuses, update_all_tools
 from .skill_upstream_state_service import load_skill_upstreams, save_skill_upstreams
+from .workflow_state_service import load_workflow_state, save_workflow_state
+from .workflow_service import scan_workflow_statuses, execute_workflow_action
 from .github_skill_upstream import (
     derive_child_tree_url,
     get_latest_commit_sha,
@@ -80,6 +82,8 @@ class ServiceDependencies:
     save_config: Callable = save_config
     save_global_rules: Callable = save_global_rules
     save_skill_upstreams: Callable = save_skill_upstreams
+    load_workflow_state: Callable = load_workflow_state
+    save_workflow_state: Callable = save_workflow_state
     update_all_tools: Callable = update_all_tools
 
 
@@ -355,6 +359,25 @@ class AppService:
             )
         environments = build_environment_list(config, self._runtime_deps())
         return sync_global_rule_targets(global_rules, environments, targets)
+
+    def get_workflow_statuses(self) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        return scan_workflow_statuses(environments)
+
+    def workflow_action(
+        self,
+        workflow_id: str,
+        target_key: str,
+        action: str,
+    ) -> dict[str, object]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        workflow_state = self.deps.load_workflow_state()
+        return execute_workflow_action(
+            workflow_id, target_key, action, environments,
+            workflow_state, self.deps.save_workflow_state,
+        )
 
     def _runtime_deps(self) -> dict[str, Callable]:
         return {

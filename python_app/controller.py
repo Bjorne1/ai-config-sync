@@ -68,6 +68,7 @@ class AppController(QObject):
         self.window.skill_set_url_requested.connect(self._skill_set_url)
         self.window.skill_check_requested.connect(self._skill_check)
         self.window.skill_upgrade_requested.connect(self._skill_upgrade)
+        self.window.workflow_action_requested.connect(self._workflow_action)
 
     def _fetch_snapshot(self) -> dict[str, object]:
         config = self.service.get_config()
@@ -84,6 +85,7 @@ class AppController(QObject):
                 "commands": self.service.scan_resources("commands"),
             },
             "skillUpstreams": self.service.get_skill_upstreams(),
+            "workflowStatuses": self.service.get_workflow_statuses(),
         }
 
     def _after_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -340,6 +342,25 @@ class AppController(QObject):
     def _after_skill_upgrade(self, result: list[dict[str, object]]) -> None:
         self.window.set_skill_update_results(result)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSkillUpgrade")
+
+    def _workflow_action(self, workflow_id: str, target_key: str, action: str) -> None:
+        label_map = {
+            "install": "安装工作流",
+            "uninstall": "卸载工作流",
+            "enable": "启用工作流",
+            "disable": "禁用工作流",
+        }
+        label = label_map.get(action, action)
+        busy_key = f"workflowAction:{workflow_id}:{target_key}"
+        self._run_task(
+            busy_key,
+            f"{label}：{workflow_id} ({target_key})",
+            lambda: self.service.workflow_action(workflow_id, target_key, action),
+            lambda _result: self.refresh_snapshot(
+                reset_error=False,
+                busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
+            ),
+        )
 
     def _run_task(
         self,

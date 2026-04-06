@@ -19,6 +19,7 @@ from .pages.global_rule_page import GlobalRulePage
 from .pages.overview_page import OverviewPage
 from .pages.resource_page import ResourcePage
 from .pages.tools_page import ToolsPage
+from .pages.workflow_page import WorkflowPage
 from .theme import build_stylesheet
 from .widgets import NavButton
 
@@ -27,11 +28,12 @@ PAGE_KEYS = (
     "skills",
     "commands",
     "globalRules",
+    "workflows",
     "config",
     "cleanup",
     "tools",
 )
-PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "配置", "清理", "工具更新")
+PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "工作流", "配置", "清理", "工具更新")
 
 
 class MainWindow(QMainWindow):
@@ -53,6 +55,7 @@ class MainWindow(QMainWindow):
     skill_set_url_requested = Signal(object)
     skill_check_requested = Signal(object)
     skill_upgrade_requested = Signal(object)
+    workflow_action_requested = Signal(str, str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -134,6 +137,7 @@ class MainWindow(QMainWindow):
         self.skills_page = ResourcePage("skills")
         self.commands_page = ResourcePage("commands")
         self.global_rule_page = GlobalRulePage()
+        self.workflow_page = WorkflowPage()
         self.config_page = ConfigPage()
         self.cleanup_page = CleanupPage()
         self.tools_page = ToolsPage()
@@ -142,6 +146,7 @@ class MainWindow(QMainWindow):
             self.skills_page,
             self.commands_page,
             self.global_rule_page,
+            self.workflow_page,
             self.config_page,
             self.cleanup_page,
             self.tools_page,
@@ -166,6 +171,8 @@ class MainWindow(QMainWindow):
             self.global_rule_assignments_save_requested.emit
         )
         self.global_rule_page.sync_requested.connect(self.global_rule_sync_requested.emit)
+        self.workflow_page.refresh_requested.connect(self.refresh_requested.emit)
+        self.workflow_page.workflow_action_requested.connect(self.workflow_action_requested.emit)
         self.config_page.reload_requested.connect(self.reload_wsl_requested.emit)
         self.config_page.save_requested.connect(self.save_config_requested.emit)
         self.cleanup_page.cleanup_requested.connect(self.cleanup_requested.emit)
@@ -256,6 +263,7 @@ class MainWindow(QMainWindow):
             self.snapshot.get("globalRules", {}),
             self.snapshot.get("globalRuleStatus", []),
         )
+        self.workflow_page.set_context(self.snapshot.get("workflowStatuses", []))
         self.config_page.set_context(self.snapshot["config"], self.snapshot["wslRuntime"])
         self.cleanup_page.set_context(cleanup_candidates, self.cleanup_result)
         self.tools_page.set_context(
@@ -302,6 +310,10 @@ class MainWindow(QMainWindow):
             busy_gr_targets,
         )
         self.config_page.set_busy(self._busy("reloadWsl"), self._busy("saveConfig"))
+        self.workflow_page.set_busy(
+            self._busy("refresh"),
+            self._busy_names("workflowAction"),
+        )
         self.cleanup_page.set_busy(self._busy("cleanup"))
         busy_tools = self._busy_names("updateTool")
         self.tools_page.set_busy(
