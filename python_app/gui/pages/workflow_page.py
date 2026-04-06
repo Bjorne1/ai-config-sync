@@ -99,9 +99,11 @@ class WorkflowTargetRow(QWidget):
         if state == "not_installed":
             self._add_button("安装", "primary", "install")
         elif state == "enabled":
+            self._add_button("升级", "secondary", "upgrade")
             self._add_button("禁用", "secondary", "disable")
             self._add_button("卸载", "danger", "uninstall")
         elif state == "disabled":
+            self._add_button("升级", "secondary", "upgrade")
             self._add_button("启用", "primary", "enable")
             self._add_button("卸载", "danger", "uninstall")
 

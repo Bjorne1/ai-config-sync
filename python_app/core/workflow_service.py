@@ -124,6 +124,7 @@ def execute_workflow_action(
         "uninstall": handler.uninstall,
         "enable": handler.enable,
         "disable": handler.disable,
+        "upgrade": handler.upgrade,
     }
     fn = action_map.get(action)
     if fn is None:
@@ -131,7 +132,7 @@ def execute_workflow_action(
 
     result = fn(ctx)
 
-    if action == "install" and result.get("success"):
+    if action in ("install", "upgrade") and result.get("success"):
         _update_state_after_install(
             workflow_state, save_state_fn, workflow_id, target_key, result,
         )

@@ -52,6 +52,9 @@ class WorkflowHandler(ABC):
     @abstractmethod
     def disable(self, ctx: TargetContext) -> dict[str, object]: ...
 
+    @abstractmethod
+    def upgrade(self, ctx: TargetContext) -> dict[str, object]: ...
+
 
 # ---------------------------------------------------------------------------
 # Claude Code helpers
@@ -202,6 +205,34 @@ class SuperpowersClaudeHandler(WorkflowHandler):
             _rmtree_force(cache_dir)
         return {"success": True, "message": "已卸载 superpowers"}
 
+    def upgrade(self, ctx: TargetContext) -> dict[str, object]:
+        claude_dir = _claude_dir(ctx)
+        marketplace_dir = claude_dir / "plugins" / "marketplaces" / "superpowers-marketplace"
+        if not marketplace_dir.exists():
+            raise RuntimeError("marketplace 仓库不存在，请先安装再升级。")
+        result = _run_git(["git", "-C", str(marketplace_dir), "pull", "--ff-only"], ctx=ctx)
+        if result.returncode != 0:
+            raise RuntimeError(f"git pull marketplace failed: {result.stderr.strip()}")
+        plugin_src = marketplace_dir / "superpowers"
+        if not plugin_src.exists():
+            raise FileNotFoundError(f"marketplace 中未找到 superpowers 插件: {plugin_src}")
+        new_version = self._detect_version(plugin_src)
+        new_commit = self._detect_commit(marketplace_dir)
+        old_status = self.detect_status(ctx)
+        cache_parent = claude_dir / "plugins" / "cache" / "superpowers-marketplace" / "superpowers"
+        if cache_parent.exists():
+            _rmtree_force(cache_parent)
+        cache_dir = cache_parent / new_version
+        shutil.copytree(plugin_src, cache_dir)
+        self._update_installed_plugins(ctx, cache_dir, new_version, new_commit)
+        old_ver = old_status.version or "unknown"
+        return {
+            "success": True,
+            "message": f"已升级 superpowers {old_ver} → {new_version}",
+            "version": new_version,
+            "commit": new_commit,
+        }
+
     def _detect_version(self, plugin_dir: Path) -> str:
         plugin_json = plugin_dir / ".claude-plugin" / "plugin.json"
         if plugin_json.exists():
@@ -345,6 +376,26 @@ class SuperpowersCodexHandler(WorkflowHandler):
         agents_md = Path(ctx.home_dir) / ".codex" / "AGENTS.md"
         self._remove_bootstrap(agents_md)
         return {"success": True, "message": "已禁用 superpowers"}
+
+    def upgrade(self, ctx: TargetContext) -> dict[str, object]:
+        codex_dir = Path(ctx.home_dir) / ".codex"
+        sp_dir = codex_dir / CODEX_SUPERPOWERS_DIR_NAME
+        if not sp_dir.exists():
+            raise RuntimeError("superpowers 未安装，请先安装再升级。")
+        old_version = self._detect_version(sp_dir)
+        result = _run_git(["git", "-C", str(sp_dir), "pull", "--ff-only"], ctx=ctx)
+        if result.returncode != 0:
+            raise RuntimeError(f"git pull failed: {result.stderr.strip()}")
+        new_version = self._detect_version(sp_dir)
+        new_commit = self._detect_commit(sp_dir)
+        old_ver = old_version or "unknown"
+        new_ver = new_version or "unknown"
+        return {
+            "success": True,
+            "message": f"已升级 superpowers {old_ver} → {new_ver}",
+            "version": new_version,
+            "commit": new_commit,
+        }
 
     def _has_sentinel(self, agents_md: Path) -> bool:
         if not agents_md.exists():

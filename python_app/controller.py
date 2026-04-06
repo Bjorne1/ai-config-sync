@@ -349,6 +349,7 @@ class AppController(QObject):
             "uninstall": "卸载工作流",
             "enable": "启用工作流",
             "disable": "禁用工作流",
+            "upgrade": "升级工作流",
         }
         label = label_map.get(action, action)
         busy_key = f"workflowAction:{workflow_id}:{target_key}"
