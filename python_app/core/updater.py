@@ -10,6 +10,19 @@ SEMVER_STABLE_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 SEMVER_CORE_PATTERN = re.compile(r"^(\d+\.\d+\.\d+)")
 
 
+def _extract_json_object(text: str) -> str:
+    """从可能包含杂讯的输出中提取 JSON 对象字符串。
+
+    bash -ic 加载 .bashrc 时可能在 JSON 前后输出额外文字,
+    此函数从第一个 '{' 到最后一个 '}' 截取子串。
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return text
+    return text[start:end + 1]
+
+
 def _run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
     if not command:
         raise ValueError("command must not be empty")
@@ -117,7 +130,7 @@ def get_wsl_npm_version(distro: str, package_name: str) -> str | None:
     except (OSError, subprocess.CalledProcessError):
         return None
     try:
-        data = json.loads(completed.stdout or "{}")
+        data = json.loads(_extract_json_object(completed.stdout or "{}"))
     except json.JSONDecodeError:
         return None
     return data.get("dependencies", {}).get(package_name, {}).get("version")
