@@ -1,16 +1,19 @@
 import os
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QMessageBox
 
+from python_app.controller import AppController
 from python_app.gui.logo_matrix import LOGO_ACTIVE_ROLE, LOGO_TOOL_ROLE, ToolLogoDelegate
 from python_app.gui.header_views import GroupedHeaderView
 from python_app.gui.main_window import MainWindow
 from python_app.gui.pages.global_rule_page import GlobalRulePage
 from python_app.gui.pages.resource_page import ResourcePage
+from python_app.gui.pages.workflow_page import WorkflowPage
 
 
 class GuiSmokeTests(unittest.TestCase):
@@ -332,6 +335,116 @@ class GuiSmokeTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_workflow_page_formats_omx_version_and_hides_skills_buttons(self) -> None:
+        page = WorkflowPage()
+        page.set_context(
+            [
+                {
+                    "workflowId": "oh-my-codex",
+                    "label": "oh-my-codex",
+                    "description": "test",
+                    "repoUrl": "https://github.com/Bjorne1/oh-my-codex",
+                    "targets": {
+                        "windows:codex": {
+                            "available": True,
+                            "installed": True,
+                            "enabled": True,
+                            "version": "0.12.4",
+                            "installedCommit": "abcdef123456",
+                            "skillsLinkable": False,
+                        }
+                    },
+                }
+            ]
+        )
+
+        card = page._workflow_cards["oh-my-codex"]
+        row = card._target_rows["windows:codex"]
+
+        self.assertEqual(row._version_label.text(), "v0.12.4 · abcdef12")
+        self.assertEqual([button.text() for button in row._buttons], ["升级", "禁用", "卸载"])
+
+    def test_controller_converts_omx_confirm_yes_to_force_action(self) -> None:
+        window = MainWindow()
+        service = mock.Mock()
+        controller = AppController(window, service=service)
+        window.snapshot = {
+            "workflowStatuses": [
+                {
+                    "workflowId": "oh-my-codex",
+                    "targets": {
+                        "windows:codex": {
+                            "enabled": False,
+                            "agentsFileExists": True,
+                            "agentsFilePath": r"C:\Users\me\.codex\AGENTS.md",
+                        }
+                    },
+                }
+            ]
+        }
+
+        with mock.patch(
+            "python_app.controller.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "install")
+
+        self.assertEqual(action, "install_force")
+
+    def test_controller_converts_omx_confirm_no_to_no_force_action(self) -> None:
+        window = MainWindow()
+        service = mock.Mock()
+        controller = AppController(window, service=service)
+        window.snapshot = {
+            "workflowStatuses": [
+                {
+                    "workflowId": "oh-my-codex",
+                    "targets": {
+                        "windows:codex": {
+                            "enabled": True,
+                            "agentsFileExists": True,
+                            "agentsFilePath": r"C:\Users\me\.codex\AGENTS.md",
+                        }
+                    },
+                }
+            ]
+        }
+
+        with mock.patch(
+            "python_app.controller.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "upgrade")
+
+        self.assertEqual(action, "upgrade_no_force")
+
+    def test_controller_cancels_omx_action_when_prompt_cancelled(self) -> None:
+        window = MainWindow()
+        service = mock.Mock()
+        controller = AppController(window, service=service)
+        window.snapshot = {
+            "workflowStatuses": [
+                {
+                    "workflowId": "oh-my-codex",
+                    "targets": {
+                        "windows:codex": {
+                            "enabled": False,
+                            "agentsFileExists": True,
+                            "agentsFilePath": r"C:\Users\me\.codex\AGENTS.md",
+                        }
+                    },
+                }
+            ]
+        }
+
+        with mock.patch(
+            "python_app.controller.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Cancel,
+        ):
+            action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "enable")
+
+        self.assertIsNone(action)
 
 
 if __name__ == "__main__":

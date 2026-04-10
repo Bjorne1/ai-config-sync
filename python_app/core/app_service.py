@@ -363,7 +363,8 @@ class AppService:
     def get_workflow_statuses(self) -> list[dict[str, object]]:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
-        return scan_workflow_statuses(environments)
+        workflow_state = self.deps.load_workflow_state()
+        return scan_workflow_statuses(environments, workflow_state)
 
     def workflow_action(
         self,

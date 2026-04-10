@@ -4,6 +4,7 @@ from typing import Callable
 
 from copy import deepcopy
 from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QMessageBox
 
 from .core.app_service import AppService, create_app_service
 from .gui.dashboard import summarize_sync
@@ -354,16 +355,75 @@ class AppController(QObject):
             "unlink_skills": "取消链接 Skills",
         }
         label = label_map.get(action, action)
+        resolved_action = self._resolve_workflow_action(workflow_id, target_key, action)
+        if resolved_action is None:
+            return
         busy_key = f"workflowAction:{workflow_id}:{target_key}"
         self._run_task(
             busy_key,
             f"{label}：{workflow_id} ({target_key})",
-            lambda: self.service.workflow_action(workflow_id, target_key, action),
+            lambda: self.service.workflow_action(workflow_id, target_key, resolved_action),
             lambda _result: self.refresh_snapshot(
                 reset_error=False,
                 busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
             ),
         )
+
+    def _resolve_workflow_action(
+        self,
+        workflow_id: str,
+        target_key: str,
+        action: str,
+    ) -> str | None:
+        if workflow_id != "oh-my-codex":
+            return action
+        target = self._find_workflow_target(workflow_id, target_key)
+        if not isinstance(target, dict):
+            return action
+        needs_setup = action in {"install", "enable"} or (action == "upgrade" and bool(target.get("enabled")))
+        if not needs_setup or not bool(target.get("agentsFileExists")):
+            return action
+        agents_path = str(target.get("agentsFilePath") or "AGENTS.md")
+        answer = QMessageBox.question(
+            self.window,
+            "确认覆盖 AGENTS.md",
+            (
+                f"检测到现有文件：\n{agents_path}\n\n"
+                "选择“是”会允许 omx setup 覆盖该文件；\n"
+                "选择“否”会继续安装，但保留现有 AGENTS.md；\n"
+                "选择“取消”则终止本次操作。"
+            ),
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Cancel:
+            return None
+        if answer == QMessageBox.StandardButton.Yes:
+            return f"{action}_force"
+        return f"{action}_no_force"
+
+    def _find_workflow_target(
+        self,
+        workflow_id: str,
+        target_key: str,
+    ) -> dict[str, object] | None:
+        snapshot = self.window.snapshot if isinstance(self.window.snapshot, dict) else None
+        if not snapshot:
+            return None
+        statuses = snapshot.get("workflowStatuses")
+        if not isinstance(statuses, list):
+            return None
+        for status in statuses:
+            if not isinstance(status, dict) or status.get("workflowId") != workflow_id:
+                continue
+            targets = status.get("targets")
+            if not isinstance(targets, dict):
+                return None
+            target = targets.get(target_key)
+            return target if isinstance(target, dict) else None
+        return None
 
     def _run_task(
         self,

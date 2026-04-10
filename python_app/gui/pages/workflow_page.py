@@ -27,7 +27,11 @@ STATE_MAP = {
 
 def _target_state(target: dict[str, object]) -> str:
     if target.get("error"):
-        if "目录不存在" in str(target["error"]):
+        if (
+            "目录不存在" in str(target["error"])
+            or "请先安装 Codex" in str(target["error"])
+            or "Node.js/npm" in str(target["error"])
+        ):
             return "unavailable"
         return "error"
     if not target.get("available"):
@@ -82,7 +86,14 @@ class WorkflowTargetRow(QWidget):
         self._badge.setText(label)
         self._badge.set_state(badge_state)
         version = target.get("version")
-        self._version_label.setText(f"v{version}" if version else "")
+        commit = str(target.get("installedCommit") or "").strip()
+        short_commit = commit[:8] if commit else ""
+        version_parts = []
+        if version:
+            version_parts.append(f"v{version}")
+        if short_commit:
+            version_parts.append(short_commit)
+        self._version_label.setText(" · ".join(version_parts))
         error = target.get("error")
         self._error_label.setText(str(error) if error and state in ("error", "unavailable") else "")
         self._rebuild_buttons(state, target)

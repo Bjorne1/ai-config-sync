@@ -7,7 +7,7 @@ import stat
 import subprocess
 from abc import ABC, abstractmethod
 from .linker import create_symlink, remove_symlink
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -38,6 +38,7 @@ class TargetStatus:
     skills_linkable: bool = False
     skills_linked: bool = False
     skills_total: int = 0
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 class WorkflowHandler(ABC):

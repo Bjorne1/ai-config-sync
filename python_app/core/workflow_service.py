@@ -54,10 +54,24 @@ def _parse_target_key(target_key: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+def _normalize_workflow_action(action: str) -> str:
+    special_actions = {
+        "install_force": "install",
+        "install_no_force": "install",
+        "enable_force": "enable",
+        "enable_no_force": "enable",
+        "upgrade_force": "upgrade",
+        "upgrade_no_force": "upgrade",
+    }
+    return special_actions.get(action, action)
+
+
 def scan_workflow_statuses(
     environments: dict[str, object],
+    workflow_state: dict[str, dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
+    state = workflow_state or {}
     for workflow_id, definition in WORKFLOW_REGISTRY.items():
         targets: dict[str, dict[str, object]] = {}
         for env_id in WORKFLOW_ENVIRONMENT_IDS:
@@ -78,16 +92,27 @@ def scan_workflow_statuses(
                 handler = definition.handler_factory(tool_id)
                 try:
                     status = handler.detect_status(ctx)
+                    saved_target = (
+                        state.get(workflow_id, {}).get("targets", {}).get(target_key, {})
+                        if isinstance(state.get(workflow_id, {}), dict)
+                        else {}
+                    )
+                    saved_commit = None
+                    saved_version = None
+                    if isinstance(saved_target, dict):
+                        saved_commit = str(saved_target.get("installedCommit") or "").strip() or None
+                        saved_version = str(saved_target.get("installedVersion") or "").strip() or None
                     targets[target_key] = {
                         "available": status.available,
                         "installed": status.installed,
                         "enabled": status.enabled,
-                        "version": status.version,
-                        "installedCommit": status.installed_commit,
+                        "version": status.version or (saved_version if status.installed else None),
+                        "installedCommit": status.installed_commit or (saved_commit if status.installed else None),
                         "error": status.error,
                         "skillsLinkable": status.skills_linkable,
                         "skillsLinked": status.skills_linked,
                         "skillsTotal": status.skills_total,
+                        **status.metadata,
                     }
                 except Exception as exc:
                     targets[target_key] = {
@@ -122,12 +147,46 @@ def execute_workflow_action(
     if ctx is None:
         raise RuntimeError(f"无法解析目标环境: {target_key}")
 
+    install_force = getattr(handler, "install_with_options", None)
+    enable_force = getattr(handler, "enable_with_options", None)
+    upgrade_force = getattr(handler, "upgrade_with_options", None)
+
     action_map = {
         "install": handler.install,
+        "install_force": (
+            (lambda current_ctx: install_force(current_ctx, force_agents_overwrite=True))
+            if callable(install_force)
+            else handler.install
+        ),
+        "install_no_force": (
+            (lambda current_ctx: install_force(current_ctx, force_agents_overwrite=False))
+            if callable(install_force)
+            else handler.install
+        ),
         "uninstall": handler.uninstall,
         "enable": handler.enable,
+        "enable_force": (
+            (lambda current_ctx: enable_force(current_ctx, force_agents_overwrite=True))
+            if callable(enable_force)
+            else handler.enable
+        ),
+        "enable_no_force": (
+            (lambda current_ctx: enable_force(current_ctx, force_agents_overwrite=False))
+            if callable(enable_force)
+            else handler.enable
+        ),
         "disable": handler.disable,
         "upgrade": handler.upgrade,
+        "upgrade_force": (
+            (lambda current_ctx: upgrade_force(current_ctx, force_agents_overwrite=True))
+            if callable(upgrade_force)
+            else handler.upgrade
+        ),
+        "upgrade_no_force": (
+            (lambda current_ctx: upgrade_force(current_ctx, force_agents_overwrite=False))
+            if callable(upgrade_force)
+            else handler.upgrade
+        ),
         "link_skills": handler.link_skills,
         "unlink_skills": handler.unlink_skills,
     }
@@ -137,11 +196,13 @@ def execute_workflow_action(
 
     result = fn(ctx)
 
-    if action in ("install", "upgrade") and result.get("success"):
+    normalized_action = _normalize_workflow_action(action)
+
+    if normalized_action in ("install", "upgrade") and result.get("success"):
         _update_state_after_install(
             workflow_state, save_state_fn, workflow_id, target_key, result,
         )
-    elif action == "uninstall" and result.get("success"):
+    elif normalized_action == "uninstall" and result.get("success"):
         _update_state_after_uninstall(
             workflow_state, save_state_fn, workflow_id, target_key,
         )

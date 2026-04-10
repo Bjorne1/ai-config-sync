@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from .omx_workflow_handler import OhMyCodexHandler
 from .workflow_handlers import (
     AgentSkillsClaudeHandler,
     AgentSkillsCodexHandler,
@@ -26,6 +27,12 @@ def _agent_skills_handler_factory(tool_id: str) -> WorkflowHandler:
     if tool_id == "codex":
         return AgentSkillsCodexHandler()
     raise ValueError(f"agent-skills does not support tool: {tool_id}")
+
+
+def _oh_my_codex_handler_factory(tool_id: str) -> WorkflowHandler:
+    if tool_id == "codex":
+        return OhMyCodexHandler()
+    raise ValueError(f"oh-my-codex does not support tool: {tool_id}")
 
 
 @dataclass(frozen=True)
@@ -54,5 +61,13 @@ WORKFLOW_REGISTRY: dict[str, WorkflowDefinition] = {
         repo_url="https://github.com/addyosmani/agent-skills",
         supported_tools=("claude", "codex"),
         handler_factory=_agent_skills_handler_factory,
+    ),
+    "oh-my-codex": WorkflowDefinition(
+        workflow_id="oh-my-codex",
+        label="oh-my-codex",
+        description="Codex workflow layer managed from your fork, with user-level setup and cleanup.",
+        repo_url="https://github.com/Bjorne1/oh-my-codex",
+        supported_tools=("codex",),
+        handler_factory=_oh_my_codex_handler_factory,
     ),
 }
