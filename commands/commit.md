@@ -46,6 +46,19 @@ description: 统一提交代码（显式模式优先，未指定时按 current/s
 - 复杂改动可添加正文，说明改动内容和原因，每行不超过 72 个字符
 - 如果改动明显属于不同功能，应拆分为多个提交，而不是混成一个
 
+## 推送前 rebase
+推送前必须执行 `git rebase` 将当前分支变基到主分支（`main`）最新提交之上，避免产生 `Merge branch 'main' of ... into xxx` 的合并提交，以及合并请求中出现"源分支落后于目标分支"的提示。
+
+具体流程：
+1. `git fetch origin main` — 拉取主分支最新状态。
+2. `git rebase origin/main` — 将当前分支变基到主分支之上。
+3. 若 rebase 出现冲突，**立即中止**（`git rebase --abort`），告知用户冲突文件列表，由用户手动解决后再重试，不要自行解决冲突。
+4. rebase 成功后再执行 `git push`。若远程分支已有旧历史，使用 `git push --force-with-lease`（安全强推，防止覆盖他人提交）。
+
+注意：
+- 仅在当前分支**不是** `main`/`master` 时执行 rebase。
+- 若当前分支已经领先于 `origin/main` 且无分叉（`git rebase` 为 no-op），直接推送即可。
+
 ## 执行要求
 - 先基于目标范围确认本次实际要提交的改动，再生成提交信息。
 - 在自动决策场景下，先结合当前对话上下文与 Git 状态判断是否命中 `current`，再按优先级依次回退。
