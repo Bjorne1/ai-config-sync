@@ -100,11 +100,8 @@ class MainWindow(QMainWindow):
         title.setObjectName("sidebarTitle")
         layout.addWidget(title)
         layout.addSpacing(20)
-        NAV_GROUP_BREAKS = {"tools"}
         self.nav_buttons: dict[str, NavButton] = {}
         for key, label in zip(PAGE_KEYS, PAGE_LABELS, strict=True):
-            if key in NAV_GROUP_BREAKS:
-                layout.addSpacing(12)
             normal_icon, active_icon = nav_icons(key)
             button = NavButton(label, normal_icon, active_icon)
             button.clicked.connect(lambda _=False, page_key=key: self.set_current_page(page_key))
