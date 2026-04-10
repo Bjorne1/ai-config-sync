@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QScrollArea,
@@ -179,10 +180,12 @@ class WorkflowCard(CardFrame):
 class WorkflowPage(QWidget):
     refresh_requested = Signal()
     workflow_action_requested = Signal(str, str, str)
+    _GRID_COLUMNS = 2
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._workflow_cards: dict[str, WorkflowCard] = {}
+        self._workflow_order: list[str] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -198,6 +201,14 @@ class WorkflowPage(QWidget):
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 12, 0, 0)
         self._content_layout.setSpacing(18)
+        self._cards_container = QWidget()
+        self._cards_layout = QGridLayout(self._cards_container)
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._cards_layout.setHorizontalSpacing(18)
+        self._cards_layout.setVerticalSpacing(18)
+        for column in range(self._GRID_COLUMNS):
+            self._cards_layout.setColumnStretch(column, 1)
+        self._content_layout.addWidget(self._cards_container)
         self._content_layout.addStretch(1)
         scroll.setWidget(self._content)
         outer.addWidget(scroll, 1)
@@ -232,12 +243,12 @@ class WorkflowPage(QWidget):
                 card.action_requested.connect(
                     lambda tk, action, wid=workflow_id: self.workflow_action_requested.emit(wid, tk, action),
                 )
-                insert_index = self._content_layout.count() - 1
-                self._content_layout.insertWidget(insert_index, card)
                 self._workflow_cards[workflow_id] = card
+                self._workflow_order.append(workflow_id)
             targets = status.get("targets", {})
             if isinstance(targets, dict):
                 card.set_targets(targets)
+        self._relayout_cards()
         total = len(statuses)
         installed = sum(
             1 for s in statuses
@@ -257,3 +268,17 @@ class WorkflowPage(QWidget):
                 if t.startswith(f"{workflow_id}:")
             }
             card.set_busy(card_targets)
+
+    def _relayout_cards(self) -> None:
+        while self._cards_layout.count():
+            item = self._cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+        for index, workflow_id in enumerate(self._workflow_order):
+            card = self._workflow_cards.get(workflow_id)
+            if card is None:
+                continue
+            row = index // self._GRID_COLUMNS
+            column = index % self._GRID_COLUMNS
+            self._cards_layout.addWidget(card, row, column)

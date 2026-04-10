@@ -365,6 +365,38 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(row._version_label.text(), "v0.12.4 · abcdef12")
         self.assertEqual([button.text() for button in row._buttons], ["升级", "禁用", "卸载"])
 
+    def test_workflow_page_uses_two_column_card_grid(self) -> None:
+        page = WorkflowPage()
+        page.set_context(
+            [
+                {
+                    "workflowId": "superpowers",
+                    "label": "Superpowers",
+                    "description": "test",
+                    "repoUrl": "https://github.com/obra/superpowers",
+                    "targets": {},
+                },
+                {
+                    "workflowId": "agent-skills",
+                    "label": "Agent Skills",
+                    "description": "test",
+                    "repoUrl": "https://github.com/addyosmani/agent-skills",
+                    "targets": {},
+                },
+                {
+                    "workflowId": "oh-my-codex",
+                    "label": "oh-my-codex",
+                    "description": "test",
+                    "repoUrl": "https://github.com/Bjorne1/oh-my-codex",
+                    "targets": {},
+                },
+            ]
+        )
+
+        self.assertIs(page._cards_layout.itemAtPosition(0, 0).widget(), page._workflow_cards["superpowers"])
+        self.assertIs(page._cards_layout.itemAtPosition(0, 1).widget(), page._workflow_cards["agent-skills"])
+        self.assertIs(page._cards_layout.itemAtPosition(1, 0).widget(), page._workflow_cards["oh-my-codex"])
+
     def test_controller_converts_omx_confirm_yes_to_force_action(self) -> None:
         window = MainWindow()
         service = mock.Mock()
