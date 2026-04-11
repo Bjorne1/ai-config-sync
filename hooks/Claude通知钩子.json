@@ -1,0 +1,35 @@
+"hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "pwsh -NoLogo -NoProfile -Command \"$input = $input | Out-String; if ($input.Trim()) { $json = ConvertFrom-Json $input; Import-Module BurntToast; New-BurntToastNotification -Text 'Claude Code', $json.message -AppLogo '~/.claude/claude.png' -Sound Alarm2 }\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "pwsh -NoLogo -NoProfile -Command \"Import-Module BurntToast; New-BurntToastNotification -Text 'Claude Code', 'Session ended' -AppLogo '~/.claude/claude.png' -Sound Default\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "pwsh -NoLogo -NoProfile -Command \"Import-Module BurntToast; New-BurntToastNotification -Text 'Claude Code', 'Processing completed' -AppLogo '~/.claude/claude.png' -Sound Default\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  }
