@@ -304,12 +304,18 @@ class OhMyCodexHandler(WorkflowHandler):
         package = self._require_package(ctx)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
+        doctor = self._run_doctor_check(ctx, package)
         commit = self._latest_commit_resolver()
+        message = f"已安装 {OH_MY_CODEX_LABEL}"
+        if doctor["warnings"]:
+            message += f"（doctor 发现 {len(doctor['warnings'])} 项非 OK）"
         return {
             "success": True,
-            "message": f"已安装 {OH_MY_CODEX_LABEL}",
+            "message": message,
             "version": package.version,
             "commit": commit,
+            "doctor": doctor,
+            "doctorWarnings": doctor["warnings"],
         }
 
     def enable_with_options(
@@ -323,10 +329,16 @@ class OhMyCodexHandler(WorkflowHandler):
         package = self._require_package(ctx)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
+        doctor = self._run_doctor_check(ctx, package)
+        message = f"已启用 {OH_MY_CODEX_LABEL}"
+        if doctor["warnings"]:
+            message += f"（doctor 发现 {len(doctor['warnings'])} 项非 OK）"
         return {
             "success": True,
-            "message": f"已启用 {OH_MY_CODEX_LABEL}",
+            "message": message,
             "version": package.version,
+            "doctor": doctor,
+            "doctorWarnings": doctor["warnings"],
         }
 
     def upgrade_with_options(
@@ -420,6 +432,47 @@ class OhMyCodexHandler(WorkflowHandler):
         if force_agents_overwrite:
             args.append("--force")
         return self._run_omx(ctx, package, args)
+
+    def _run_doctor_check(
+        self,
+        ctx: TargetContext,
+        package: OmxPackageInfo,
+    ) -> dict[str, object]:
+        args = ["node", str(package.entry_script), "doctor"]
+        try:
+            result = self._runner.run(ctx, args, cwd=self._runtime_dir_for(ctx))
+        except OSError as exc:
+            message = _node_runtime_missing_message(ctx.environment_id)
+            return {
+                "ran": False,
+                "returnCode": None,
+                "allOk": False,
+                "warnings": [f"[WARN] doctor 未执行: {message} ({exc})"],
+                "output": "",
+            }
+
+        merged_output = "\n".join(
+            part for part in (
+                _normalize_newlines(result.stdout),
+                _normalize_newlines(result.stderr),
+            ) if part
+        )
+        status_lines = []
+        for raw in merged_output.splitlines():
+            stripped = raw.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                status_lines.append(stripped)
+        warnings = [line for line in status_lines if not line.startswith("[OK]")]
+        if result.returncode != 0 and not warnings:
+            detail = _normalize_newlines(result.stderr) or _normalize_newlines(result.stdout) or "doctor 命令执行失败"
+            warnings.append(f"[WARN] doctor 返回非 0: {detail}")
+        return {
+            "ran": True,
+            "returnCode": result.returncode,
+            "allOk": bool(not warnings),
+            "warnings": warnings,
+            "output": merged_output,
+        }
 
     def _run_omx(
         self,

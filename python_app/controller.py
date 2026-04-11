@@ -359,14 +359,41 @@ class AppController(QObject):
         if resolved_action is None:
             return
         busy_key = f"workflowAction:{workflow_id}:{target_key}"
+        task_label = f"{label}：{workflow_id} ({target_key})"
         self._run_task(
             busy_key,
-            f"{label}：{workflow_id} ({target_key})",
+            task_label,
             lambda: self.service.workflow_action(workflow_id, target_key, resolved_action),
-            lambda _result: self.refresh_snapshot(
-                reset_error=False,
-                busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
-            ),
+            lambda result: self._after_workflow_action(task_label, workflow_id, target_key, result),
+            log_success=False,
+        )
+
+    def _after_workflow_action(
+        self,
+        task_label: str,
+        workflow_id: str,
+        target_key: str,
+        result: object,
+    ) -> None:
+        detail = "执行完成"
+        warnings: list[str] = []
+        if isinstance(result, dict):
+            message = str(result.get("message") or "").strip()
+            if message:
+                detail = message
+            raw_warnings = result.get("doctorWarnings")
+            if isinstance(raw_warnings, list):
+                warnings = [str(item).strip() for item in raw_warnings if str(item).strip()]
+        if warnings:
+            preview = "；".join(warnings[:3])
+            hidden = len(warnings) - 3
+            if hidden > 0:
+                preview += f"；其余 {hidden} 项已省略"
+            detail = f"{detail}；{preview}"
+        self._push_log(task_label, detail, "ok")
+        self.refresh_snapshot(
+            reset_error=False,
+            busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
         )
 
     def _resolve_workflow_action(

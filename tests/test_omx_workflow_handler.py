@@ -166,6 +166,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                     _completed(["npm", "run", "build"]),
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["node", str(built_entry), "setup", "--scope", "user"]),
+                    _completed(["node", str(built_entry), "doctor"], stdout="[OK] Codex home: ready"),
                 ],
                 on_call=on_call,
             )
@@ -182,6 +183,12 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 runner.calls[5]["args"],
                 ["node", str(built_entry), "setup", "--scope", "user"],
             )
+            self.assertEqual(
+                runner.calls[6]["args"],
+                ["node", str(built_entry), "doctor"],
+            )
+            self.assertTrue(result["doctor"]["allOk"])
+            self.assertEqual(result["doctorWarnings"], [])
             manifest_path = root / "runtime" / "workflow-backups" / "oh-my-codex" / "windows" / "codex" / "manifest.json"
             self.assertTrue(manifest_path.exists())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -211,6 +218,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"]),
+                    _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"], stdout="[OK] AGENTS.md: found"),
                 ]
             )
             handler = OhMyCodexHandler(runner=runner, latest_commit_resolver=lambda: "abcdef123456")
@@ -222,6 +230,37 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 runner.calls[3]["args"],
                 ["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"],
             )
+            self.assertEqual(
+                runner.calls[4]["args"],
+                ["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"],
+            )
+
+    def test_enable_doctor_warning_does_not_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            modules_dir = root / "node_modules"
+            modules_dir.mkdir()
+            package_dir = self._create_package(modules_dir)
+            codex_home = root / "home"
+            codex_dir = codex_home / ".codex"
+            codex_dir.mkdir(parents=True)
+            (codex_dir / "AGENTS.md").write_text("# USER RULES\n", encoding="utf-8")
+            ctx = TargetContext(environment_id="windows", tool_id="codex", home_dir=str(codex_home))
+            runner = FakeRunner(
+                [
+                    _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
+                    _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"]),
+                    _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"], stdout="[WARN] MCP Servers: missing entries"),
+                ]
+            )
+            handler = OhMyCodexHandler(runner=runner)
+
+            with mock.patch("python_app.core.omx_workflow_handler.WINDOWS_OMX_BASE", root / "runtime"):
+                result = handler.enable_with_options(ctx, force_agents_overwrite=True)
+
+            self.assertTrue(result["success"])
+            self.assertIn("doctor 发现 1 项非 OK", result["message"])
+            self.assertEqual(result["doctorWarnings"], ["[WARN] MCP Servers: missing entries"])
 
     def test_disable_restores_original_files_and_removes_generated_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
