@@ -302,6 +302,7 @@ class OhMyCodexHandler(WorkflowHandler):
         self._require_setup_decision(ctx, force_agents_overwrite)
         self._install_package(ctx)
         package = self._require_package(ctx)
+        self._ensure_shell_command(ctx, package)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
         doctor = self._run_doctor_check(ctx, package)
@@ -327,6 +328,7 @@ class OhMyCodexHandler(WorkflowHandler):
         self._ensure_codex_ready(ctx)
         self._require_setup_decision(ctx, force_agents_overwrite)
         package = self._require_package(ctx)
+        self._ensure_shell_command(ctx, package)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
         doctor = self._run_doctor_check(ctx, package)
@@ -355,6 +357,7 @@ class OhMyCodexHandler(WorkflowHandler):
             self._require_setup_decision(ctx, force_agents_overwrite)
         self._install_package(ctx)
         package = self._require_package(ctx)
+        self._ensure_shell_command(ctx, package)
         if was_enabled:
             self._run_setup(ctx, package, force_agents_overwrite)
         commit = self._latest_commit_resolver()
@@ -432,6 +435,20 @@ class OhMyCodexHandler(WorkflowHandler):
         if force_agents_overwrite:
             args.append("--force")
         return self._run_omx(ctx, package, args)
+
+    def _ensure_shell_command(
+        self,
+        ctx: TargetContext,
+        package: OmxPackageInfo,
+    ) -> None:
+        if ctx.environment_id != "wsl":
+            return
+        home_dir = str(_wsl_home_dir(ctx))
+        local_bin = f"{home_dir}/.local/bin"
+        local_omx = f"{local_bin}/omx"
+        self._run_with_cwd(ctx, self._runtime_dir_for(ctx), ["mkdir", "-p", local_bin])
+        self._run_with_cwd(ctx, self._runtime_dir_for(ctx), ["ln", "-sf", package.entry_script, local_omx])
+        self._run_with_cwd(ctx, self._runtime_dir_for(ctx), ["chmod", "+x", package.entry_script])
 
     def _run_doctor_check(
         self,

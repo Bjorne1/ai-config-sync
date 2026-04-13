@@ -9,6 +9,7 @@ from python_app.core.omx_workflow_handler import (
     OH_MY_CODEX_PACKAGE,
     OH_MY_CODEX_TARBALL_URL,
     OhMyCodexHandler,
+    OmxPackageInfo,
     OmxCommandRunner,
 )
 from python_app.core.workflow_handlers import TargetContext, TargetStatus
@@ -416,6 +417,40 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
 
         self.assertEqual(captured["args"][0:3], ["cmd.exe", "/c", "npm"])
         self.assertEqual(captured["args"][3:], ["root", "-g"])
+
+    def test_ensure_shell_command_creates_local_omx_link_in_wsl(self) -> None:
+        runner = FakeRunner(
+            [
+                _completed(["mkdir", "-p", "/home/me/.local/bin"]),
+                _completed(["ln", "-sf", "/usr/local/lib/node_modules/oh-my-codex/dist/cli/omx.js", "/home/me/.local/bin/omx"]),
+                _completed(["chmod", "+x", "/usr/local/lib/node_modules/oh-my-codex/dist/cli/omx.js"]),
+            ]
+        )
+        handler = OhMyCodexHandler(runner=runner)
+        ctx = TargetContext(
+            environment_id="wsl",
+            tool_id="codex",
+            home_dir=r"\\wsl.localhost\Ubuntu\home\me",
+            wsl_distro="Ubuntu",
+        )
+        package = OmxPackageInfo(
+            package_dir=Path(r"\\wsl.localhost\Ubuntu\usr\local\lib\node_modules\oh-my-codex"),
+            version="0.12.4",
+            entry_script="/usr/local/lib/node_modules/oh-my-codex/dist/cli/omx.js",
+            command_dir="/usr/local/lib/node_modules/oh-my-codex",
+        )
+
+        handler._ensure_shell_command(ctx, package)
+
+        self.assertEqual(runner.calls[0]["args"], ["mkdir", "-p", "/home/me/.local/bin"])
+        self.assertEqual(
+            runner.calls[1]["args"],
+            ["ln", "-sf", "/usr/local/lib/node_modules/oh-my-codex/dist/cli/omx.js", "/home/me/.local/bin/omx"],
+        )
+        self.assertEqual(
+            runner.calls[2]["args"],
+            ["chmod", "+x", "/usr/local/lib/node_modules/oh-my-codex/dist/cli/omx.js"],
+        )
 
     def test_detect_status_returns_clear_message_when_wsl_node_missing(self) -> None:
         runner = FakeRunner(
