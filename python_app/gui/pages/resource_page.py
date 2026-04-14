@@ -366,10 +366,10 @@ class ResourcePage(QWidget):
         tools = list(TOOL_IDS)
         stats = {env_id: {tool_id: 0 for tool_id in tools} for env_id in ENVIRONMENT_IDS}
         for row in rows:
-            targets = row.get("effectiveTargets") or {}
             for env_id in ENVIRONMENT_IDS:
-                for tool_id in targets.get(env_id, []) or []:
-                    if tool_id in stats[env_id]:
+                for tool_id in tools:
+                    entry = find_matrix_entry(row, env_id, tool_id)
+                    if self._has_visible_target(row, env_id, tool_id, entry):
                         stats[env_id][tool_id] += 1
         return stats
 

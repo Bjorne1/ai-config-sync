@@ -283,6 +283,48 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn("Codex: 2", labels)
         self.assertIn("Gemini: 1", labels)
 
+    def test_resource_page_pager_ignores_missing_targets_in_installed_counts(self) -> None:
+        page = ResourcePage("skills")
+        page.set_rows(
+            [
+                {
+                    "name": "a",
+                    "path": r"D:\wcs_project\ai-config-sync\skills\a",
+                    "isDirectory": True,
+                    "effectiveTargets": {"windows": ["codex", "gemini"], "wsl": ["antigravity"]},
+                    "configuredTargets": {"windows": ["codex", "gemini"], "wsl": ["antigravity"]},
+                    "entries": [
+                        {
+                            "environmentId": "windows",
+                            "toolId": "codex",
+                            "state": "healthy",
+                            "message": "已同步",
+                            "targetExists": True,
+                        },
+                        {
+                            "environmentId": "windows",
+                            "toolId": "gemini",
+                            "state": "missing",
+                            "message": "目标缺失",
+                            "targetExists": False,
+                        },
+                        {
+                            "environmentId": "wsl",
+                            "toolId": "antigravity",
+                            "state": "missing",
+                            "message": "目标缺失",
+                            "targetExists": False,
+                        },
+                    ],
+                }
+            ]
+        )
+
+        labels = {label.text() for label in page.pager.findChildren(QLabel)}
+        self.assertIn("Codex: 1", labels)
+        self.assertIn("Gemini: 0", labels)
+        self.assertIn("Antigravity: 0", labels)
+
     def test_global_rule_page_keeps_sync_enabled_and_sends_assignments_when_dirty(self) -> None:
         page = GlobalRulePage()
         captured: list[object] = []
