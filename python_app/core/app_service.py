@@ -28,6 +28,7 @@ from .workflow_service import scan_workflow_statuses, execute_workflow_action
 from .github_skill_upstream import (
     derive_child_tree_url,
     get_latest_commit_sha,
+    infer_skill_name_from_github_url,
     install_github_tree_to_dir,
     parse_github_tree_url,
     validate_skill_name,
@@ -179,10 +180,11 @@ class AppService:
     def add_skill_from_url(self, name: str, url: str) -> dict[str, object]:
         config = self.deps.load_config()
         source_dir = config["sourceDirs"]["skills"]
-        skill_name = validate_skill_name(name)
         normalized_url = str(url or "").strip()
         if not normalized_url:
             raise ValueError("URL 不能为空。")
+        resolved_name = str(name or "").strip() or infer_skill_name_from_github_url(normalized_url) or ""
+        skill_name = validate_skill_name(resolved_name)
         source = parse_github_tree_url(normalized_url)
         leaf = str(PurePosixPath(source.path).name) if source.path else ""
         if leaf != skill_name:

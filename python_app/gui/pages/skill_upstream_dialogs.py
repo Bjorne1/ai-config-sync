@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ...core.github_skill_upstream import infer_skill_name_from_github_url
 
 _DIALOG_MIN_WIDTH = 640
 _DIALOG_MIN_HEIGHT = 220
@@ -22,7 +23,9 @@ class AddSkillFromUrlDialog(QDialog):
         self.setMinimumSize(_DIALOG_MIN_WIDTH, _DIALOG_MIN_HEIGHT)
         self.name_input = QLineEdit()
         self.url_input = QLineEdit()
+        self._last_suggested_name = ""
         self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path>")
+        self.url_input.textChanged.connect(self._sync_name_from_url)
         self._hint = QLabel("URL 可填 skills 父目录或具体 skill 目录，会按名称自动匹配。")
         self._hint.setObjectName("muted")
         self._hint.setWordWrap(True)
@@ -39,8 +42,22 @@ class AddSkillFromUrlDialog(QDialog):
         layout.addWidget(self._hint)
         layout.addWidget(buttons)
 
+    def _sync_name_from_url(self, text: str) -> None:
+        current = self.name_input.text().strip()
+        suggested = infer_skill_name_from_github_url(text) or ""
+        if suggested:
+            if not current or current == self._last_suggested_name:
+                self.name_input.setText(suggested)
+            self._last_suggested_name = suggested
+            return
+        if current == self._last_suggested_name:
+            self.name_input.clear()
+        self._last_suggested_name = ""
+
     def payload(self) -> dict[str, str]:
-        return {"name": self.name_input.text().strip(), "url": self.url_input.text().strip()}
+        url = self.url_input.text().strip()
+        name = self.name_input.text().strip() or infer_skill_name_from_github_url(url) or ""
+        return {"name": name, "url": url}
 
 
 class SetSkillUrlDialog(QDialog):
@@ -70,4 +87,3 @@ class SetSkillUrlDialog(QDialog):
 
     def url(self) -> str:
         return self.url_input.text().strip()
-

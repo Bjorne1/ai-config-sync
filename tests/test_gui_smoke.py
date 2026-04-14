@@ -13,6 +13,7 @@ from python_app.gui.header_views import GroupedHeaderView
 from python_app.gui.main_window import MainWindow
 from python_app.gui.pages.global_rule_page import GlobalRulePage
 from python_app.gui.pages.resource_page import ResourcePage
+from python_app.gui.pages.skill_upstream_dialogs import AddSkillFromUrlDialog
 from python_app.gui.pages.workflow_page import WorkflowPage
 
 
@@ -185,6 +186,14 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIsNotNone(page.add_skill_button)
         self.assertIsNotNone(page.set_url_button)
         self.assertIsNotNone(page.check_button)
+
+    def test_add_skill_dialog_prefills_name_from_specific_url(self) -> None:
+        dialog = AddSkillFromUrlDialog()
+
+        dialog.url_input.setText("https://github.com/KKKKhazix/khazix-skills/tree/main/hv-analysis")
+
+        self.assertEqual(dialog.name_input.text(), "hv-analysis")
+        self.assertEqual(dialog.payload()["name"], "hv-analysis")
 
     def test_commands_page_has_no_upstream_buttons(self) -> None:
         page = ResourcePage("commands")

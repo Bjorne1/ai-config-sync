@@ -32,6 +32,14 @@
     "targeted-chatroom": {
       "url": "https://github.com/dontbesilent2025/claude-skills/tree/main/skills/targeted-chatroom",
       "installedCommit": "6b556cdc0ae53b46c692c11ece208a82209739ad"
+    },
+    "hv-analysis": {
+      "url": "https://github.com/KKKKhazix/khazix-skills/tree/main/hv-analysis",
+      "installedCommit": "c6d097b020bea94d93d60d05f204bca63c165840"
+    },
+    "khazix-writer": {
+      "url": "https://github.com/KKKKhazix/khazix-skills/tree/main/khazix-writer",
+      "installedCommit": "08996c956ea70b1529a9b1bff308296c4076c3ad"
     }
   }
 }

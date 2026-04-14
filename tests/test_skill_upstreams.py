@@ -4,7 +4,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from python_app.core.github_skill_upstream import derive_child_tree_url, parse_github_tree_url, validate_skill_name
+from python_app.core.github_skill_upstream import (
+    derive_child_tree_url,
+    infer_skill_name_from_github_url,
+    parse_github_tree_url,
+    validate_skill_name,
+)
 from python_app.core.github_skill_upstream import _extract_zip_subpath  # noqa: PLC2701
 from python_app.core.skill_upstream_state_service import load_skill_upstreams, save_skill_upstreams
 
@@ -26,6 +31,16 @@ class SkillUpstreamTests(unittest.TestCase):
     def test_derive_child_tree_url_appends_skill_folder(self) -> None:
         derived = derive_child_tree_url("https://github.com/anthropics/skills/tree/main/skills", "pdf")
         self.assertEqual(derived, "https://github.com/anthropics/skills/tree/main/skills/pdf")
+
+    def test_infer_skill_name_from_specific_github_tree_url(self) -> None:
+        inferred = infer_skill_name_from_github_url(
+            "https://github.com/KKKKhazix/khazix-skills/tree/main/hv-analysis"
+        )
+        self.assertEqual(inferred, "hv-analysis")
+
+    def test_infer_skill_name_skips_generic_parent_folder(self) -> None:
+        inferred = infer_skill_name_from_github_url("https://github.com/anthropics/skills/tree/main/skills")
+        self.assertIsNone(inferred)
 
     def test_extract_zip_subpath_extracts_only_requested_prefix(self) -> None:
         zip_buffer = io.BytesIO()

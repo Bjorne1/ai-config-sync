@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 _DEFAULT_TIMEOUT_SECONDS = 30
 _GITHUB_HOSTS = {"github.com", "www.github.com"}
 _USER_AGENT = "ai-config-sync"
+_GENERIC_SKILL_PATH_NAMES = {"skill", "skills"}
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,25 @@ def validate_skill_name(name: str) -> str:
     if Path(normalized).name != normalized:
         raise ValueError("skill 名称非法。")
     return normalized
+
+
+def infer_skill_name_from_github_url(url: str) -> str | None:
+    raw = (url or "").strip()
+    if not raw:
+        return None
+    try:
+        source = parse_github_tree_url(raw)
+    except ValueError:
+        return None
+    if not source.path:
+        return None
+    candidate = str(PurePosixPath(source.path).name).strip()
+    if not candidate or candidate.lower() in _GENERIC_SKILL_PATH_NAMES:
+        return None
+    try:
+        return validate_skill_name(candidate)
+    except ValueError:
+        return None
 
 
 def _http_get_json(url: str) -> object:
