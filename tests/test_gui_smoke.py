@@ -336,6 +336,107 @@ class GuiSmokeTests(unittest.TestCase):
             },
         )
 
+    def test_global_rule_page_defaults_to_hiding_profiles_without_targets(self) -> None:
+        page = GlobalRulePage()
+        statuses = [
+            {
+                "environmentId": env,
+                "toolId": tool,
+                "targetFilePath": None,
+                "profileId": None,
+                "profileName": None,
+                "state": "idle",
+                "message": "未分配规则版本",
+            }
+            for env in ("windows", "wsl")
+            for tool in ("claude", "codex", "gemini")
+        ]
+        page.set_context(
+            {
+                "profiles": [
+                    {
+                        "id": "rule-1",
+                        "name": "规则1",
+                        "file": "rule-1.md",
+                        "updatedAt": "2026-03-20T00:00:00",
+                        "content": "# rule 1",
+                    },
+                    {
+                        "id": "rule-2",
+                        "name": "规则2",
+                        "file": "rule-2.md",
+                        "updatedAt": "2026-03-20T00:00:00",
+                        "content": "# rule 2",
+                    },
+                ],
+                "assignments": {
+                    "windows": {"claude": "rule-1", "codex": None, "gemini": None},
+                    "wsl": {"claude": None, "codex": None, "gemini": None},
+                },
+            },
+            statuses,
+        )
+
+        self.assertTrue(page.used_only_checkbox.isChecked())
+        self.assertEqual(page.profile_list.count(), 1)
+        self.assertEqual(page.profile_list.item(0).data(Qt.ItemDataRole.UserRole), "rule-1")
+
+        page.used_only_checkbox.setChecked(False)
+
+        self.assertEqual(page.profile_list.count(), 2)
+
+    def test_global_rule_page_filter_resets_selection_to_visible_profile(self) -> None:
+        page = GlobalRulePage()
+        statuses = [
+            {
+                "environmentId": env,
+                "toolId": tool,
+                "targetFilePath": None,
+                "profileId": None,
+                "profileName": None,
+                "state": "idle",
+                "message": "未分配规则版本",
+            }
+            for env in ("windows", "wsl")
+            for tool in ("claude", "codex", "gemini")
+        ]
+        page.set_context(
+            {
+                "profiles": [
+                    {
+                        "id": "rule-1",
+                        "name": "规则1",
+                        "file": "rule-1.md",
+                        "updatedAt": "2026-03-20T00:00:00",
+                        "content": "# rule 1",
+                    },
+                    {
+                        "id": "rule-2",
+                        "name": "规则2",
+                        "file": "rule-2.md",
+                        "updatedAt": "2026-03-20T00:00:00",
+                        "content": "# rule 2",
+                    },
+                ],
+                "assignments": {
+                    "windows": {"claude": "rule-1", "codex": None, "gemini": None},
+                    "wsl": {"claude": None, "codex": None, "gemini": None},
+                },
+            },
+            statuses,
+        )
+        page.used_only_checkbox.setChecked(False)
+        page._selected_profile_id = "rule-2"
+        page._select_profile("rule-2")
+
+        page.used_only_checkbox.setChecked(True)
+
+        self.assertEqual(page._selected_profile_id, "rule-1")
+        self.assertEqual(
+            page.profile_list.currentItem().data(Qt.ItemDataRole.UserRole),
+            "rule-1",
+        )
+
     def test_workflow_page_formats_omx_version_and_hides_skills_buttons(self) -> None:
         page = WorkflowPage()
         page.set_context(

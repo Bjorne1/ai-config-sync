@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest import mock
 
 from python_app.core.omx_workflow_handler import (
+    CODEX_NPM_PACKAGE,
     OH_MY_CODEX_PACKAGE,
-    OH_MY_CODEX_TARBALL_URL,
     OhMyCodexHandler,
     OmxPackageInfo,
     OmxCommandRunner,
@@ -73,18 +73,6 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
         (package_dir / "dist" / "cli" / "omx.js").write_text("console.log('ok')", encoding="utf-8")
         return package_dir
 
-    def _create_source_package(self, modules_dir: Path, version: str = "0.12.4") -> Path:
-        package_dir = modules_dir / OH_MY_CODEX_PACKAGE
-        package_dir.mkdir(parents=True)
-        (package_dir / "skills" / "deep-interview").mkdir(parents=True)
-        (package_dir / "prompts").mkdir(parents=True)
-        (package_dir / "prompts" / "ralph.md").write_text("# prompt", encoding="utf-8")
-        (package_dir / "package.json").write_text(
-            f'{{"name":"{OH_MY_CODEX_PACKAGE}","version":"{version}"}}',
-            encoding="utf-8",
-        )
-        return package_dir
-
     def test_detect_status_distinguishes_installed_and_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -144,8 +132,8 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
             root = Path(temp_dir)
             modules_dir = root / "node_modules"
             modules_dir.mkdir()
-            package_dir = self._create_source_package(modules_dir)
-            built_entry = package_dir / "dist" / "cli" / "omx.js"
+            package_dir = self._create_package(modules_dir)
+            entry_script = str(package_dir / "dist" / "cli" / "omx.js")
             codex_home = root / "home"
             codex_dir = codex_home / ".codex"
             codex_dir.mkdir(parents=True)
@@ -154,22 +142,13 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
             (codex_dir / "hooks.json").write_text('{"before": true}\n', encoding="utf-8")
             ctx = TargetContext(environment_id="windows", tool_id="codex", home_dir=str(codex_home))
 
-            def on_call(_ctx, args, _cwd):
-                if args == ["npm", "run", "build"]:
-                    built_entry.parent.mkdir(parents=True, exist_ok=True)
-                    built_entry.write_text("console.log('ok')", encoding="utf-8")
-
             runner = FakeRunner(
                 [
-                    _completed(["npm", "install", "-g", OH_MY_CODEX_TARBALL_URL]),
+                    _completed(["npm", "install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE]),
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
-                    _completed(["npm", "install", "--include=dev"]),
-                    _completed(["npm", "run", "build"]),
-                    _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
-                    _completed(["node", str(built_entry), "setup", "--scope", "user"]),
-                    _completed(["node", str(built_entry), "doctor"], stdout="[OK] Codex home: ready"),
+                    _completed(["node", entry_script, "setup", "--scope", "user"]),
+                    _completed(["node", entry_script, "doctor"], stdout="[OK] Codex home: ready"),
                 ],
-                on_call=on_call,
             )
             handler = OhMyCodexHandler(runner=runner, latest_commit_resolver=lambda: "abcdef123456")
 
@@ -177,16 +156,14 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 result = handler.install_with_options(ctx, force_agents_overwrite=False)
 
             self.assertEqual(result["commit"], "abcdef123456")
-            self.assertEqual(runner.calls[0]["args"], ["npm", "install", "-g", OH_MY_CODEX_TARBALL_URL])
-            self.assertEqual(runner.calls[2]["args"], ["npm", "install", "--include=dev"])
-            self.assertEqual(runner.calls[3]["args"], ["npm", "run", "build"])
+            self.assertEqual(runner.calls[0]["args"], ["npm", "install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE])
             self.assertEqual(
-                runner.calls[5]["args"],
-                ["node", str(built_entry), "setup", "--scope", "user"],
+                runner.calls[2]["args"],
+                ["node", entry_script, "setup", "--scope", "user"],
             )
             self.assertEqual(
-                runner.calls[6]["args"],
-                ["node", str(built_entry), "doctor"],
+                runner.calls[3]["args"],
+                ["node", entry_script, "doctor"],
             )
             self.assertTrue(result["doctor"]["allOk"])
             self.assertEqual(result["doctorWarnings"], [])
@@ -215,8 +192,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
             ctx = TargetContext(environment_id="windows", tool_id="codex", home_dir=str(codex_home))
             runner = FakeRunner(
                 [
-                    _completed(["npm", "install", "-g", OH_MY_CODEX_TARBALL_URL]),
-                    _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
+                    _completed(["npm", "install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE]),
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"]),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"], stdout="[OK] AGENTS.md: found"),
@@ -228,11 +204,11 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 handler.install_with_options(ctx, force_agents_overwrite=True)
 
             self.assertEqual(
-                runner.calls[3]["args"],
+                runner.calls[2]["args"],
                 ["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"],
             )
             self.assertEqual(
-                runner.calls[4]["args"],
+                runner.calls[3]["args"],
                 ["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"],
             )
 
@@ -314,8 +290,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
             runner = FakeRunner(
                 [
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
-                    _completed(["npm", "install", "-g", OH_MY_CODEX_TARBALL_URL]),
-                    _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
+                    _completed(["npm", "install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE]),
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                 ]
             )
@@ -325,7 +300,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 result = handler.upgrade(ctx)
 
             self.assertTrue(result["success"])
-            self.assertEqual(len(runner.calls), 4)
+            self.assertEqual(len(runner.calls), 3)
             self.assertTrue(all(call["args"][0] != "node" for call in runner.calls))
 
     def test_wsl_package_resolution_uses_linux_entry_and_unc_package_dir(self) -> None:
@@ -492,7 +467,7 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
             workflow_id="oh-my-codex",
             label="oh-my-codex",
             description="test",
-            repo_url="https://github.com/Bjorne1/oh-my-codex",
+            repo_url="https://github.com/Yeachan-Heo/oh-my-codex",
             supported_tools=("codex",),
             handler_factory=lambda _tool_id: StaticHandler(
                 TargetStatus(

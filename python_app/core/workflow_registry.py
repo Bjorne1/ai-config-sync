@@ -65,8 +65,8 @@ WORKFLOW_REGISTRY: dict[str, WorkflowDefinition] = {
     "oh-my-codex": WorkflowDefinition(
         workflow_id="oh-my-codex",
         label="oh-my-codex",
-        description="Codex workflow layer managed from your fork, with user-level setup and cleanup.",
-        repo_url="https://github.com/Bjorne1/oh-my-codex",
+        description="Codex workflow layer with user-level setup and cleanup.",
+        repo_url="https://github.com/Yeachan-Heo/oh-my-codex",
         supported_tools=("codex",),
         handler_factory=_oh_my_codex_handler_factory,
     ),

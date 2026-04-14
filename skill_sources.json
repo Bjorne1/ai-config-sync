@@ -28,6 +28,10 @@
     "taskmaster": {
       "url": "https://github.com/lili-luo/aicoding-cookbook/tree/main/skills/codex/taskmaster",
       "installedCommit": "b61bc5e94e856c489185ee920d70707973ba6387"
+    },
+    "targeted-chatroom": {
+      "url": "https://github.com/dontbesilent2025/claude-skills/tree/main/skills/targeted-chatroom",
+      "installedCommit": "6b556cdc0ae53b46c692c11ece208a82209739ad"
     }
   }
 }

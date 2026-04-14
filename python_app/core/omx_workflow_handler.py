@@ -13,8 +13,9 @@ from .process_utils import hidden_subprocess_kwargs
 from .workflow_handlers import TargetContext, TargetStatus, WorkflowHandler
 
 
-OH_MY_CODEX_TARBALL_URL = "https://codeload.github.com/Bjorne1/oh-my-codex/tar.gz/refs/heads/main"
+CODEX_NPM_PACKAGE = "@openai/codex"
 OH_MY_CODEX_PACKAGE = "oh-my-codex"
+OH_MY_CODEX_REPO_OWNER = "Yeachan-Heo"
 OH_MY_CODEX_LABEL = "oh-my-codex"
 OMX_RUNTIME_DIR_NAME = "workflow-runtime"
 OMX_BACKUP_DIR_NAME = "workflow-backups"
@@ -422,8 +423,7 @@ class OhMyCodexHandler(WorkflowHandler):
         return package
 
     def _install_package(self, ctx: TargetContext) -> None:
-        self._run_npm(ctx, ["install", "-g", OH_MY_CODEX_TARBALL_URL])
-        self._prepare_package(ctx)
+        self._run_npm(ctx, ["install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE])
 
     def _run_setup(
         self,
@@ -507,14 +507,6 @@ class OhMyCodexHandler(WorkflowHandler):
     ) -> subprocess.CompletedProcess[str]:
         return self._run(ctx, ["npm", *npm_args])
 
-    def _run_npm_in_dir(
-        self,
-        ctx: TargetContext,
-        cwd: str | Path,
-        npm_args: Sequence[str],
-    ) -> subprocess.CompletedProcess[str]:
-        return self._run_with_cwd(ctx, cwd, ["npm", *npm_args])
-
     def _run(
         self,
         ctx: TargetContext,
@@ -542,45 +534,6 @@ class OhMyCodexHandler(WorkflowHandler):
                 raise RuntimeError(_node_runtime_missing_message(ctx.environment_id))
             raise RuntimeError(detail)
         return result
-
-    def _prepare_package(self, ctx: TargetContext) -> None:
-        package = self._package_from_root(ctx)
-        local_entry_script = package.package_dir / "dist" / "cli" / "omx.js"
-        if local_entry_script.exists():
-            return
-        self._run_npm_in_dir(ctx, package.command_dir, ["install", "--include=dev"])
-        self._run_npm_in_dir(ctx, package.command_dir, ["run", "build"])
-        if not local_entry_script.exists():
-            raise RuntimeError(f"oh-my-codex 入口不存在: {local_entry_script}")
-
-    def _package_from_root(self, ctx: TargetContext) -> OmxPackageInfo:
-        result = self._run_npm(ctx, ["root", "-g"])
-        package_root = _normalize_newlines(result.stdout)
-        if not package_root:
-            raise RuntimeError("未找到全局 npm 目录。")
-        if ctx.environment_id == "wsl":
-            if not ctx.wsl_distro:
-                raise RuntimeError("未选择 WSL 发行版")
-            package_dir = _wsl_path_to_unc(
-                ctx.wsl_distro,
-                f"{package_root.rstrip('/')}/{OH_MY_CODEX_PACKAGE}",
-            )
-            command_dir = f"{package_root.rstrip('/')}/{OH_MY_CODEX_PACKAGE}"
-            entry_script = f"{package_root.rstrip('/')}/{OH_MY_CODEX_PACKAGE}/dist/cli/omx.js"
-        else:
-            package_dir = Path(package_root) / OH_MY_CODEX_PACKAGE
-            command_dir = str(package_dir)
-            entry_script = str(package_dir / "dist" / "cli" / "omx.js")
-        if not package_dir.exists():
-            raise RuntimeError("oh-my-codex 安装目录不存在。")
-        package_json = _read_json(package_dir / "package.json") or {}
-        version = str(package_json.get("version") or "").strip() or None
-        return OmxPackageInfo(
-            package_dir=package_dir,
-            version=version,
-            entry_script=entry_script,
-            command_dir=command_dir,
-        )
 
     def _codex_dir(self, ctx: TargetContext) -> Path:
         return Path(ctx.home_dir) / ".codex"
@@ -665,7 +618,7 @@ class OhMyCodexHandler(WorkflowHandler):
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "(Invoke-WebRequest -UseBasicParsing 'https://api.github.com/repos/Bjorne1/oh-my-codex/commits/main').Content",
+                "(Invoke-WebRequest -UseBasicParsing 'https://api.github.com/repos/Yeachan-Heo/oh-my-codex/commits/main').Content",
             ],
             capture_output=True,
             text=True,

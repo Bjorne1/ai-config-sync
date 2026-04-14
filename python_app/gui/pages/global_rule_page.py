@@ -298,13 +298,21 @@ class GlobalRulePage(QWidget):
         toolbar.addWidget(self.copy_button)
         toolbar.addWidget(self.delete_button)
         card.body_layout.addLayout(toolbar)
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(8)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜索规则版本")
         self.search_input.textChanged.connect(self._refresh_profile_list)
+        self.used_only_checkbox = QCheckBox("仅看有目标")
+        self.used_only_checkbox.setChecked(True)
+        self.used_only_checkbox.toggled.connect(self._refresh_profile_list)
+        filter_row.addWidget(self.search_input, 1)
+        filter_row.addWidget(self.used_only_checkbox)
         self.profile_list = QListWidget()
         self.profile_list.currentItemChanged.connect(self._handle_profile_selection_changed)
         self.profile_list.itemDoubleClicked.connect(lambda _item: self._edit_profile())
-        card.body_layout.addWidget(self.search_input)
+        card.body_layout.addLayout(filter_row)
         card.body_layout.addWidget(self.profile_list, 1)
         return card
 
@@ -386,6 +394,7 @@ class GlobalRulePage(QWidget):
         self.copy_button.setDisabled(self._is_busy)
         self.delete_button.setDisabled(self._is_busy)
         self.search_input.setDisabled(self._is_busy)
+        self.used_only_checkbox.setDisabled(self._is_busy)
         self.profile_list.setDisabled(self._is_busy)
         for (env_id, tool_id), card in self._target_cards.items():
             target_busy = sync_busy or (env_id, tool_id) in busy_targets
@@ -394,13 +403,19 @@ class GlobalRulePage(QWidget):
 
     def _refresh_profile_list(self) -> None:
         query = self.search_input.text().strip().lower()
+        used_only = self.used_only_checkbox.isChecked()
+        visible_profile_ids: list[str] = []
         self.profile_list.blockSignals(True)
         self.profile_list.clear()
         for profile in self._profiles:
+            profile_id = str(profile["id"])
+            used_count = self._usage_count(profile_id)
+            if used_only and not used_count:
+                continue
             name = str(profile.get("name") or "(未命名规则)")
             if query and query not in name.lower():
                 continue
-            used_count = self._usage_count(str(profile["id"]))
+            visible_profile_ids.append(profile_id)
             parts = [name]
             scope_tag = self._scope_tag(profile)
             if scope_tag:
@@ -409,7 +424,7 @@ class GlobalRulePage(QWidget):
                 parts.append(f"{used_count} 个目标")
             text = "  ·  ".join(parts)
             item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, str(profile["id"]))
+            item.setData(Qt.ItemDataRole.UserRole, profile_id)
             updated_at = str(profile.get("updatedAt") or "未保存")
             description = str(profile.get("description") or "")
             tip_lines = [name, f"更新时间：{updated_at}"]
@@ -424,6 +439,11 @@ class GlobalRulePage(QWidget):
             item.setToolTip("\n".join(tip_lines))
             self.profile_list.addItem(item)
         self.profile_list.blockSignals(False)
+        next_profile_id = self._selected_profile_id
+        if next_profile_id not in visible_profile_ids:
+            next_profile_id = visible_profile_ids[0] if visible_profile_ids else None
+            self._selected_profile_id = next_profile_id
+        self._select_profile(next_profile_id)
 
     def _select_profile(self, profile_id: str | None) -> None:
         if not profile_id:
