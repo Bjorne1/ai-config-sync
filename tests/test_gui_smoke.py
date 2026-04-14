@@ -519,11 +519,14 @@ class GuiSmokeTests(unittest.TestCase):
 
         with mock.patch(
             "python_app.controller.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+            side_effect=[
+                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Yes,
+            ],
         ):
             action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "install")
 
-        self.assertEqual(action, "install_force")
+        self.assertEqual(action, "install|force=1|supplement=1")
 
     def test_controller_converts_omx_confirm_no_to_no_force_action(self) -> None:
         window = MainWindow()
@@ -546,11 +549,14 @@ class GuiSmokeTests(unittest.TestCase):
 
         with mock.patch(
             "python_app.controller.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
+            side_effect=[
+                QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            ],
         ):
             action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "upgrade")
 
-        self.assertEqual(action, "upgrade_no_force")
+        self.assertEqual(action, "upgrade|force=0|supplement=0")
 
     def test_controller_cancels_omx_action_when_prompt_cancelled(self) -> None:
         window = MainWindow()
@@ -578,6 +584,33 @@ class GuiSmokeTests(unittest.TestCase):
             action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "enable")
 
         self.assertIsNone(action)
+
+    def test_controller_prompts_supplement_rules_without_existing_agents(self) -> None:
+        window = MainWindow()
+        service = mock.Mock()
+        controller = AppController(window, service=service)
+        window.snapshot = {
+            "workflowStatuses": [
+                {
+                    "workflowId": "oh-my-codex",
+                    "targets": {
+                        "windows:codex": {
+                            "enabled": False,
+                            "agentsFileExists": False,
+                        }
+                    },
+                }
+            ]
+        }
+
+        with mock.patch(
+            "python_app.controller.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as prompt:
+            action = controller._resolve_workflow_action("oh-my-codex", "windows:codex", "install")
+
+        self.assertEqual(action, "install|supplement=1")
+        self.assertEqual(prompt.call_count, 1)
 
 
 if __name__ == "__main__":

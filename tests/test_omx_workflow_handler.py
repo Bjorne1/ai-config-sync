@@ -11,6 +11,8 @@ from python_app.core.omx_workflow_handler import (
     OhMyCodexHandler,
     OmxPackageInfo,
     OmxCommandRunner,
+    SUPPLEMENT_RULES_PATH,
+    WINDOWS_NOTIFY_LINE,
 )
 from python_app.core.workflow_handlers import TargetContext, TargetStatus
 from python_app.core.workflow_registry import WorkflowDefinition
@@ -60,6 +62,26 @@ class StaticHandler:
 
 
 class OmxWorkflowHandlerTests(unittest.TestCase):
+    def _setup_generated_config(self) -> str:
+        return (
+            "# oh-my-codex\n"
+            'notify = ["node", "/home/wcs/.nvm/versions/node/v24.13.0/lib/node_modules/oh-my-codex/dist/scripts/notify-hook.js"]\n'
+        )
+
+    def _setup_output_writer(
+        self,
+        codex_dir: Path,
+        *,
+        agents_text: str = "# OMX RULES\n",
+    ):
+        def _on_call(_ctx: TargetContext, args: list[str], _cwd) -> None:
+            if len(args) < 3 or args[0] != "node" or args[2] != "setup":
+                return
+            (codex_dir / "AGENTS.md").write_text(agents_text, encoding="utf-8")
+            (codex_dir / "config.toml").write_text(self._setup_generated_config(), encoding="utf-8")
+
+        return _on_call
+
     def _create_package(self, modules_dir: Path, version: str = "0.12.4") -> Path:
         package_dir = modules_dir / OH_MY_CODEX_PACKAGE
         (package_dir / "dist" / "cli").mkdir(parents=True)
@@ -149,11 +171,16 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                     _completed(["node", entry_script, "setup", "--scope", "user"]),
                     _completed(["node", entry_script, "doctor"], stdout="[OK] Codex home: ready"),
                 ],
+                on_call=self._setup_output_writer(codex_dir),
             )
             handler = OhMyCodexHandler(runner=runner, latest_commit_resolver=lambda: "abcdef123456")
 
             with mock.patch("python_app.core.omx_workflow_handler.WINDOWS_OMX_BASE", root / "runtime"):
-                result = handler.install_with_options(ctx, force_agents_overwrite=False)
+                result = handler.install_with_options(
+                    ctx,
+                    force_agents_overwrite=False,
+                    supplement_rules=True,
+                )
 
             self.assertEqual(result["commit"], "abcdef123456")
             self.assertEqual(runner.calls[0]["args"], ["npm", "install", "-g", CODEX_NPM_PACKAGE, OH_MY_CODEX_PACKAGE])
@@ -179,6 +206,15 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                 (manifest_path.parent / "payload" / "AGENTS.md").read_text(encoding="utf-8"),
                 "# USER RULES\n",
             )
+            expected_agents = (
+                SUPPLEMENT_RULES_PATH.read_text(encoding="utf-8").strip()
+                + "\n\n# OMX RULES\n"
+            )
+            self.assertEqual((codex_dir / "AGENTS.md").read_text(encoding="utf-8"), expected_agents)
+            self.assertEqual(
+                (codex_dir / "config.toml").read_text(encoding="utf-8"),
+                f"# oh-my-codex\n{WINDOWS_NOTIFY_LINE}\n",
+            )
 
     def test_install_uses_force_when_user_allows_agents_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -196,12 +232,17 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"]),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"], stdout="[OK] AGENTS.md: found"),
-                ]
+                ],
+                on_call=self._setup_output_writer(codex_home / ".codex"),
             )
             handler = OhMyCodexHandler(runner=runner, latest_commit_resolver=lambda: "abcdef123456")
 
             with mock.patch("python_app.core.omx_workflow_handler.WINDOWS_OMX_BASE", root / "runtime"):
-                handler.install_with_options(ctx, force_agents_overwrite=True)
+                handler.install_with_options(
+                    ctx,
+                    force_agents_overwrite=True,
+                    supplement_rules=False,
+                )
 
             self.assertEqual(
                 runner.calls[2]["args"],
@@ -228,16 +269,25 @@ class OmxWorkflowHandlerTests(unittest.TestCase):
                     _completed(["npm", "root", "-g"], stdout=str(modules_dir)),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "setup", "--force", "--scope", "user"]),
                     _completed(["node", str(package_dir / "dist" / "cli" / "omx.js"), "doctor"], stdout="[WARN] MCP Servers: missing entries"),
-                ]
+                ],
+                on_call=self._setup_output_writer(codex_dir),
             )
             handler = OhMyCodexHandler(runner=runner)
 
             with mock.patch("python_app.core.omx_workflow_handler.WINDOWS_OMX_BASE", root / "runtime"):
-                result = handler.enable_with_options(ctx, force_agents_overwrite=True)
+                result = handler.enable_with_options(
+                    ctx,
+                    force_agents_overwrite=True,
+                    supplement_rules=False,
+                )
 
             self.assertTrue(result["success"])
             self.assertIn("doctor 发现 1 项非 OK", result["message"])
             self.assertEqual(result["doctorWarnings"], ["[WARN] MCP Servers: missing entries"])
+            self.assertEqual(
+                (codex_dir / "config.toml").read_text(encoding="utf-8"),
+                f"# oh-my-codex\n{WINDOWS_NOTIFY_LINE}\n",
+            )
 
     def test_disable_restores_original_files_and_removes_generated_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

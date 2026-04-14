@@ -55,15 +55,32 @@ def _parse_target_key(target_key: str) -> tuple[str, str]:
 
 
 def _normalize_workflow_action(action: str) -> str:
-    special_actions = {
-        "install_force": "install",
-        "install_no_force": "install",
-        "enable_force": "enable",
-        "enable_no_force": "enable",
-        "upgrade_force": "upgrade",
-        "upgrade_no_force": "upgrade",
-    }
-    return special_actions.get(action, action)
+    return _parse_workflow_action(action)[0]
+
+
+def _parse_workflow_action(action: str) -> tuple[str, bool | None, bool | None]:
+    parts = [segment.strip() for segment in action.split("|") if segment.strip()]
+    if not parts:
+        raise ValueError("工作流操作不能为空")
+    base_action = parts[0]
+    force_agents_overwrite: bool | None = None
+    supplement_rules: bool | None = None
+    for part in parts[1:]:
+        key, sep, raw_value = part.partition("=")
+        if sep != "=":
+            raise ValueError(f"无效的操作参数: {part}")
+        value = raw_value.strip()
+        if value not in {"0", "1"}:
+            raise ValueError(f"无效的操作参数值: {part}")
+        enabled = value == "1"
+        if key == "force":
+            force_agents_overwrite = enabled
+            continue
+        if key == "supplement":
+            supplement_rules = enabled
+            continue
+        raise ValueError(f"未知的操作参数: {key}")
+    return base_action, force_agents_overwrite, supplement_rules
 
 
 def scan_workflow_statuses(
@@ -146,6 +163,7 @@ def execute_workflow_action(
     ctx = _build_target_context(env_id, tool_id, environments)
     if ctx is None:
         raise RuntimeError(f"无法解析目标环境: {target_key}")
+    normalized_action, force_agents_overwrite, supplement_rules = _parse_workflow_action(action)
 
     install_force = getattr(handler, "install_with_options", None)
     enable_force = getattr(handler, "enable_with_options", None)
@@ -153,50 +171,36 @@ def execute_workflow_action(
 
     action_map = {
         "install": handler.install,
-        "install_force": (
-            (lambda current_ctx: install_force(current_ctx, force_agents_overwrite=True))
-            if callable(install_force)
-            else handler.install
-        ),
-        "install_no_force": (
-            (lambda current_ctx: install_force(current_ctx, force_agents_overwrite=False))
-            if callable(install_force)
-            else handler.install
-        ),
         "uninstall": handler.uninstall,
         "enable": handler.enable,
-        "enable_force": (
-            (lambda current_ctx: enable_force(current_ctx, force_agents_overwrite=True))
-            if callable(enable_force)
-            else handler.enable
-        ),
-        "enable_no_force": (
-            (lambda current_ctx: enable_force(current_ctx, force_agents_overwrite=False))
-            if callable(enable_force)
-            else handler.enable
-        ),
         "disable": handler.disable,
         "upgrade": handler.upgrade,
-        "upgrade_force": (
-            (lambda current_ctx: upgrade_force(current_ctx, force_agents_overwrite=True))
-            if callable(upgrade_force)
-            else handler.upgrade
-        ),
-        "upgrade_no_force": (
-            (lambda current_ctx: upgrade_force(current_ctx, force_agents_overwrite=False))
-            if callable(upgrade_force)
-            else handler.upgrade
-        ),
         "link_skills": handler.link_skills,
         "unlink_skills": handler.unlink_skills,
     }
-    fn = action_map.get(action)
-    if fn is None:
-        raise ValueError(f"未知操作: {action}")
-
-    result = fn(ctx)
-
-    normalized_action = _normalize_workflow_action(action)
+    if normalized_action == "install" and callable(install_force):
+        result = install_force(
+            ctx,
+            force_agents_overwrite=force_agents_overwrite,
+            supplement_rules=bool(supplement_rules),
+        )
+    elif normalized_action == "enable" and callable(enable_force):
+        result = enable_force(
+            ctx,
+            force_agents_overwrite=force_agents_overwrite,
+            supplement_rules=bool(supplement_rules),
+        )
+    elif normalized_action == "upgrade" and callable(upgrade_force):
+        result = upgrade_force(
+            ctx,
+            force_agents_overwrite=force_agents_overwrite,
+            supplement_rules=bool(supplement_rules),
+        )
+    else:
+        fn = action_map.get(normalized_action)
+        if fn is None:
+            raise ValueError(f"未知操作: {action}")
+        result = fn(ctx)
 
     if normalized_action in ("install", "upgrade") and result.get("success"):
         _update_state_after_install(

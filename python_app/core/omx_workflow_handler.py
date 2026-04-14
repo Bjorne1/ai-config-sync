@@ -22,6 +22,11 @@ OMX_BACKUP_DIR_NAME = "workflow-backups"
 OMX_WORK_DIR_NAME = "oh-my-codex"
 WINDOWS_OMX_BASE = Path(os.getenv("APPDATA") or (Path.home() / "AppData" / "Roaming")) / "ai-config-sync"
 CONFIG_MARKER = "oh-my-codex"
+SUPPLEMENT_RULES_PATH = Path(__file__).resolve().parents[2] / "workflow" / "补充规则.md"
+WINDOWS_NOTIFY_LINE = (
+    'notify = [ "pwsh.exe", "-File", '
+    '"D:/wcs_project/ai-config-sync/hooks/codex-notify.ps1", "%s" ]'
+)
 OMX_BACKUP_ITEMS = (
     "AGENTS.md",
     "config.toml",
@@ -75,6 +80,10 @@ def _wsl_runtime_dir(ctx: TargetContext) -> PurePosixPath:
 
 def _normalize_newlines(value: str) -> str:
     return value.replace("\r\n", "\n").strip()
+
+
+def _normalize_text_block(value: str) -> str:
+    return value.replace("\r\n", "\n").strip("\n")
 
 
 def _node_runtime_missing_message(environment_id: str) -> str:
@@ -247,7 +256,11 @@ class OhMyCodexHandler(WorkflowHandler):
         )
 
     def install(self, ctx: TargetContext) -> dict[str, object]:
-        return self.install_with_options(ctx, force_agents_overwrite=None)
+        return self.install_with_options(
+            ctx,
+            force_agents_overwrite=None,
+            supplement_rules=False,
+        )
 
     def uninstall(self, ctx: TargetContext) -> dict[str, object]:
         package = self._find_installed_package(ctx)
@@ -269,7 +282,11 @@ class OhMyCodexHandler(WorkflowHandler):
         }
 
     def enable(self, ctx: TargetContext) -> dict[str, object]:
-        return self.enable_with_options(ctx, force_agents_overwrite=None)
+        return self.enable_with_options(
+            ctx,
+            force_agents_overwrite=None,
+            supplement_rules=False,
+        )
 
     def disable(self, ctx: TargetContext) -> dict[str, object]:
         package = self._find_installed_package(ctx)
@@ -291,13 +308,18 @@ class OhMyCodexHandler(WorkflowHandler):
         }
 
     def upgrade(self, ctx: TargetContext) -> dict[str, object]:
-        return self.upgrade_with_options(ctx, force_agents_overwrite=None)
+        return self.upgrade_with_options(
+            ctx,
+            force_agents_overwrite=None,
+            supplement_rules=False,
+        )
 
     def install_with_options(
         self,
         ctx: TargetContext,
         *,
         force_agents_overwrite: bool | None,
+        supplement_rules: bool,
     ) -> dict[str, object]:
         self._ensure_codex_ready(ctx)
         self._require_setup_decision(ctx, force_agents_overwrite)
@@ -306,6 +328,7 @@ class OhMyCodexHandler(WorkflowHandler):
         self._ensure_shell_command(ctx, package)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
+        self._apply_post_setup_customizations(ctx, supplement_rules=supplement_rules)
         doctor = self._run_doctor_check(ctx, package)
         commit = self._latest_commit_resolver()
         message = f"已安装 {OH_MY_CODEX_LABEL}"
@@ -325,6 +348,7 @@ class OhMyCodexHandler(WorkflowHandler):
         ctx: TargetContext,
         *,
         force_agents_overwrite: bool | None,
+        supplement_rules: bool,
     ) -> dict[str, object]:
         self._ensure_codex_ready(ctx)
         self._require_setup_decision(ctx, force_agents_overwrite)
@@ -332,6 +356,7 @@ class OhMyCodexHandler(WorkflowHandler):
         self._ensure_shell_command(ctx, package)
         self._backup_existing_state(ctx)
         self._run_setup(ctx, package, force_agents_overwrite)
+        self._apply_post_setup_customizations(ctx, supplement_rules=supplement_rules)
         doctor = self._run_doctor_check(ctx, package)
         message = f"已启用 {OH_MY_CODEX_LABEL}"
         if doctor["warnings"]:
@@ -349,6 +374,7 @@ class OhMyCodexHandler(WorkflowHandler):
         ctx: TargetContext,
         *,
         force_agents_overwrite: bool | None,
+        supplement_rules: bool,
     ) -> dict[str, object]:
         status = self.detect_status(ctx)
         if not status.installed:
@@ -361,6 +387,7 @@ class OhMyCodexHandler(WorkflowHandler):
         self._ensure_shell_command(ctx, package)
         if was_enabled:
             self._run_setup(ctx, package, force_agents_overwrite)
+            self._apply_post_setup_customizations(ctx, supplement_rules=supplement_rules)
         commit = self._latest_commit_resolver()
         return {
             "success": True,
@@ -435,6 +462,43 @@ class OhMyCodexHandler(WorkflowHandler):
         if force_agents_overwrite:
             args.append("--force")
         return self._run_omx(ctx, package, args)
+
+    def _apply_post_setup_customizations(
+        self,
+        ctx: TargetContext,
+        *,
+        supplement_rules: bool,
+    ) -> None:
+        if supplement_rules:
+            self._prepend_supplement_rules(self._agents_path(ctx))
+        self._rewrite_notify_config(self._codex_dir(ctx) / "config.toml")
+
+    def _prepend_supplement_rules(self, agents_path: Path) -> None:
+        if not agents_path.exists():
+            raise RuntimeError(f"安装后未生成 AGENTS.md: {agents_path}")
+        supplement_content = _normalize_text_block(
+            SUPPLEMENT_RULES_PATH.read_text(encoding="utf-8")
+        )
+        if not supplement_content:
+            raise RuntimeError(f"补充规则文件为空: {SUPPLEMENT_RULES_PATH}")
+        current_content = _normalize_text_block(agents_path.read_text(encoding="utf-8"))
+        if current_content.startswith(supplement_content):
+            return
+        merged_content = supplement_content if not current_content else f"{supplement_content}\n\n{current_content}"
+        agents_path.write_text(merged_content + "\n", encoding="utf-8")
+
+    def _rewrite_notify_config(self, config_path: Path) -> None:
+        if not config_path.exists():
+            raise RuntimeError(f"安装后未生成 config.toml: {config_path}")
+        lines = config_path.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n")
+        for index, line in enumerate(lines):
+            if line.strip() == WINDOWS_NOTIFY_LINE:
+                return
+            if line.lstrip().startswith("notify") and "notify-hook.js" in line:
+                lines[index] = WINDOWS_NOTIFY_LINE
+                config_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+                return
+        raise RuntimeError("未找到 notify-hook.js 配置，无法替换为 PowerShell 通知脚本。")
 
     def _ensure_shell_command(
         self,

@@ -408,28 +408,64 @@ class AppController(QObject):
         if not isinstance(target, dict):
             return action
         needs_setup = action in {"install", "enable"} or (action == "upgrade" and bool(target.get("enabled")))
-        if not needs_setup or not bool(target.get("agentsFileExists")):
+        if not needs_setup:
             return action
-        agents_path = str(target.get("agentsFilePath") or "AGENTS.md")
-        answer = QMessageBox.question(
+        force_agents_overwrite: bool | None = None
+        if bool(target.get("agentsFileExists")):
+            agents_path = str(target.get("agentsFilePath") or "AGENTS.md")
+            answer = QMessageBox.question(
+                self.window,
+                "确认覆盖 AGENTS.md",
+                (
+                    f"检测到现有文件：\n{agents_path}\n\n"
+                    "选择“是”会允许 omx setup 覆盖该文件；\n"
+                    "选择“否”会继续安装，但保留现有 AGENTS.md；\n"
+                    "选择“取消”则终止本次操作。"
+                ),
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return None
+            force_agents_overwrite = answer == QMessageBox.StandardButton.Yes
+
+        supplement_answer = QMessageBox.question(
             self.window,
-            "确认覆盖 AGENTS.md",
+            "补充规则",
             (
-                f"检测到现有文件：\n{agents_path}\n\n"
-                "选择“是”会允许 omx setup 覆盖该文件；\n"
-                "选择“否”会继续安装，但保留现有 AGENTS.md；\n"
+                "是否把工作流里的补充规则加到目标 AGENTS.md 最前面？\n\n"
+                "选择“是”会先写入补充规则，再接上安装后的 AGENTS.md 内容；\n"
+                "选择“否”则保持安装后的 AGENTS.md 原样；\n"
                 "选择“取消”则终止本次操作。"
             ),
             QMessageBox.StandardButton.Yes
             | QMessageBox.StandardButton.No
             | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
         )
-        if answer == QMessageBox.StandardButton.Cancel:
+        if supplement_answer == QMessageBox.StandardButton.Cancel:
             return None
-        if answer == QMessageBox.StandardButton.Yes:
-            return f"{action}_force"
-        return f"{action}_no_force"
+        return self._encode_workflow_action(
+            action,
+            force_agents_overwrite=force_agents_overwrite,
+            supplement_rules=(supplement_answer == QMessageBox.StandardButton.Yes),
+        )
+
+    def _encode_workflow_action(
+        self,
+        action: str,
+        *,
+        force_agents_overwrite: bool | None,
+        supplement_rules: bool | None,
+    ) -> str:
+        parts = [action]
+        if force_agents_overwrite is not None:
+            parts.append(f"force={1 if force_agents_overwrite else 0}")
+        if supplement_rules is not None:
+            parts.append(f"supplement={1 if supplement_rules else 0}")
+        return "|".join(parts)
 
     def _find_workflow_target(
         self,
