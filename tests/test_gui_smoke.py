@@ -195,6 +195,14 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(dialog.name_input.text(), "hv-analysis")
         self.assertEqual(dialog.payload()["name"], "hv-analysis")
 
+    def test_add_skill_dialog_prefills_name_from_blob_skill_url(self) -> None:
+        dialog = AddSkillFromUrlDialog()
+
+        dialog.url_input.setText("https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md")
+
+        self.assertEqual(dialog.name_input.text(), "darwin-skill")
+        self.assertEqual(dialog.payload()["name"], "darwin-skill")
+
     def test_commands_page_has_no_upstream_buttons(self) -> None:
         page = ResourcePage("commands")
         self.assertIsNone(page.add_skill_button)

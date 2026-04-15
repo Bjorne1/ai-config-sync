@@ -23,10 +23,12 @@ class GitHubTreeRef:
     repo: str
     ref: str
     path: str
+    is_file: bool = False
 
 
 def build_github_tree_url(source: GitHubTreeRef) -> str:
-    base = f"https://github.com/{source.owner}/{source.repo}/tree/{source.ref}"
+    source_type = "blob" if source.is_file else "tree"
+    base = f"https://github.com/{source.owner}/{source.repo}/{source_type}/{source.ref}"
     normalized_path = str(PurePosixPath(source.path)) if source.path else ""
     if not normalized_path:
         return base
@@ -56,6 +58,11 @@ def infer_skill_name_from_github_url(url: str) -> str | None:
         return None
     if not source.path:
         return None
+    if source.is_file and PurePosixPath(source.path).name.lower() == "skill.md":
+        try:
+            return validate_skill_name(source.repo)
+        except ValueError:
+            return None
     candidate = str(PurePosixPath(source.path).name).strip()
     if not candidate or candidate.lower() in _GENERIC_SKILL_PATH_NAMES:
         return None
@@ -113,20 +120,26 @@ def parse_github_tree_url(url: str) -> GitHubTreeRef:
 
     ref = ""
     subpath = ""
-    if len(parts) >= 4 and parts[2] == "tree":
+    is_file = False
+    if len(parts) >= 4 and parts[2] in {"tree", "blob"}:
         ref = parts[3].strip()
         subpath = "/".join(part for part in parts[4:] if part)
+        is_file = parts[2] == "blob"
     else:
         ref = _get_default_branch(owner, repo)
         subpath = ""
 
     if not ref:
         raise ValueError("无法解析 GitHub ref（分支/标签/commit）。")
-    return GitHubTreeRef(owner=owner, repo=repo, ref=ref, path=subpath)
+    if is_file and not subpath:
+        raise ValueError("GitHub blob URL 缺少文件路径。")
+    return GitHubTreeRef(owner=owner, repo=repo, ref=ref, path=subpath, is_file=is_file)
 
 
 def derive_child_tree_url(base_url: str, child_folder: str) -> str:
     base = parse_github_tree_url(base_url)
+    if base.is_file:
+        raise ValueError("单文件 URL 不能自动拼接子目录。")
     child = validate_skill_name(child_folder)
     merged = str(PurePosixPath(base.path) / child) if base.path else child
     return build_github_tree_url(GitHubTreeRef(owner=base.owner, repo=base.repo, ref=base.ref, path=merged))
@@ -168,10 +181,19 @@ def _safe_member_relative_path(prefix: str, member_name: str) -> str:
     return str(candidate)
 
 
-def _extract_zip_subpath(zip_bytes: bytes, subpath: str, dest_dir: Path) -> None:
+def _extract_zip_subpath(zip_bytes: bytes, subpath: str, dest_dir: Path, *, is_file: bool = False) -> None:
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zip_file:
         root_prefix = _zip_root_prefix(zip_file)
         normalized_subpath = str(PurePosixPath(subpath)) if subpath else ""
+        if is_file:
+            wanted_member = root_prefix + normalized_subpath.strip("/")
+            if wanted_member not in zip_file.namelist():
+                raise ValueError(f"zip 中未找到文件：{subpath or '/'}")
+            target = dest_dir / PurePosixPath(normalized_subpath).name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zip_file.open(wanted_member, "r") as source_fp:
+                target.write_bytes(source_fp.read())
+            return
         wanted_prefix = root_prefix + (normalized_subpath.strip("/") + "/" if normalized_subpath else "")
         members = [name for name in zip_file.namelist() if name.startswith(wanted_prefix) and name != wanted_prefix]
         if not members:
@@ -197,7 +219,7 @@ def install_github_tree_to_dir(source: GitHubTreeRef, dest_dir: Path) -> str:
     with tempfile.TemporaryDirectory() as temp_dir:
         staging = Path(temp_dir) / "staging"
         staging.mkdir(parents=True, exist_ok=True)
-        _extract_zip_subpath(zip_bytes, source.path, staging)
+        _extract_zip_subpath(zip_bytes, source.path, staging, is_file=source.is_file)
         if dest_dir.exists():
             if dest_dir.is_dir():
                 shutil.rmtree(dest_dir)

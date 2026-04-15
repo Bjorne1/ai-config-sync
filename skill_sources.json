@@ -40,6 +40,10 @@
     "khazix-writer": {
       "url": "https://github.com/KKKKhazix/khazix-skills/tree/main/khazix-writer",
       "installedCommit": "08996c956ea70b1529a9b1bff308296c4076c3ad"
+    },
+    "darwin-skill": {
+      "url": "https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md",
+      "installedCommit": "aaf3664d5543fe463efe4858885490f685e5997b"
     }
   }
 }

@@ -71,6 +71,21 @@ def _save_settings(config: dict[str, object], patch: dict[str, object]) -> dict[
     return save_config(next_config)
 
 
+def _resolve_skill_source_url(skill_name: str, raw_url: str) -> tuple[str, object]:
+    normalized_url = str(raw_url or "").strip()
+    source = parse_github_tree_url(normalized_url)
+    leaf = str(PurePosixPath(source.path).name) if source.path else ""
+    if source.is_file:
+        inferred_name = infer_skill_name_from_github_url(normalized_url) or ""
+        if inferred_name != skill_name:
+            raise ValueError(f"单文件 URL 只能绑定同名 skill：{inferred_name or '未识别'}")
+        return normalized_url, source
+    if leaf != skill_name:
+        normalized_url = derive_child_tree_url(normalized_url, skill_name)
+        source = parse_github_tree_url(normalized_url)
+    return normalized_url, source
+
+
 @dataclass(frozen=True)
 class ServiceDependencies:
     get_default_wsl_distro: Callable = get_default_wsl_distro
@@ -165,14 +180,11 @@ class AppService:
         next_upstreams = {**upstreams}
         for name in names:
             skill_name = validate_skill_name(name)
-            parsed = parse_github_tree_url(normalized_url)
-            leaf = str(PurePosixPath(parsed.path).name) if parsed.path else ""
-            skill_url = normalized_url if leaf == skill_name else derive_child_tree_url(normalized_url, skill_name)
+            skill_url, source = _resolve_skill_source_url(skill_name, normalized_url)
             previous = next_upstreams.get(skill_name, {}) if isinstance(next_upstreams.get(skill_name), dict) else {}
             if previous.get("url") == skill_url and previous.get("installedCommit"):
                 next_upstreams[skill_name] = {**previous, "url": skill_url}
             else:
-                source = parse_github_tree_url(skill_url)
                 latest = get_latest_commit_sha(source)
                 next_upstreams[skill_name] = {"url": skill_url, "installedCommit": latest}
         return self.deps.save_skill_upstreams(next_upstreams)
@@ -185,11 +197,7 @@ class AppService:
             raise ValueError("URL 不能为空。")
         resolved_name = str(name or "").strip() or infer_skill_name_from_github_url(normalized_url) or ""
         skill_name = validate_skill_name(resolved_name)
-        source = parse_github_tree_url(normalized_url)
-        leaf = str(PurePosixPath(source.path).name) if source.path else ""
-        if leaf != skill_name:
-            normalized_url = derive_child_tree_url(normalized_url, skill_name)
-            source = parse_github_tree_url(normalized_url)
+        normalized_url, source = _resolve_skill_source_url(skill_name, normalized_url)
         installed_commit = install_github_tree_to_dir(source, Path(source_dir) / skill_name)
         upstreams = self.deps.load_skill_upstreams()
         next_upstreams = {**upstreams, skill_name: {"url": normalized_url, "installedCommit": installed_commit}}

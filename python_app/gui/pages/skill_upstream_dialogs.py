@@ -24,9 +24,9 @@ class AddSkillFromUrlDialog(QDialog):
         self.name_input = QLineEdit()
         self.url_input = QLineEdit()
         self._last_suggested_name = ""
-        self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path>")
+        self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path> 或 .../blob/<ref>/SKILL.md")
         self.url_input.textChanged.connect(self._sync_name_from_url)
-        self._hint = QLabel("URL 可填 skills 父目录或具体 skill 目录，会按名称自动匹配。")
+        self._hint = QLabel("URL 可填 skills 父目录、具体 skill 目录，或直接指向仓库内的 SKILL.md；单文件会按仓库名建目录。")
         self._hint.setObjectName("muted")
         self._hint.setWordWrap(True)
         self._hint.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -67,9 +67,9 @@ class SetSkillUrlDialog(QDialog):
         self.setModal(True)
         self.setMinimumSize(_DIALOG_MIN_WIDTH, _DIALOG_MIN_HEIGHT)
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path>")
+        self.url_input.setPlaceholderText("https://github.com/<owner>/<repo>/tree/<ref>/<path> 或 .../blob/<ref>/SKILL.md")
         self._hint = QLabel(
-            "按名称自动拼接子路径。例如填 .../tree/main/skills，docx 和 pdf 会分别绑定到 .../skills/docx 和 .../skills/pdf。"
+            "目录 URL 会按名称自动拼接子路径；单文件 URL 只能绑定同名 skill。例如填 .../tree/main/skills，docx 和 pdf 会分别绑定到 .../skills/docx 和 .../skills/pdf。"
         )
         self._hint.setObjectName("muted")
         self._hint.setWordWrap(True)

@@ -27,6 +27,15 @@ class SkillUpstreamTests(unittest.TestCase):
         self.assertEqual(ref.repo, "pua")
         self.assertEqual(ref.ref, "main")
         self.assertEqual(ref.path, "skills/pua")
+        self.assertFalse(ref.is_file)
+
+    def test_parse_github_tree_url_parses_blob_skill_file(self) -> None:
+        ref = parse_github_tree_url("https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md")
+        self.assertEqual(ref.owner, "alchaincyf")
+        self.assertEqual(ref.repo, "darwin-skill")
+        self.assertEqual(ref.ref, "master")
+        self.assertEqual(ref.path, "SKILL.md")
+        self.assertTrue(ref.is_file)
 
     def test_derive_child_tree_url_appends_skill_folder(self) -> None:
         derived = derive_child_tree_url("https://github.com/anthropics/skills/tree/main/skills", "pdf")
@@ -41,6 +50,10 @@ class SkillUpstreamTests(unittest.TestCase):
     def test_infer_skill_name_skips_generic_parent_folder(self) -> None:
         inferred = infer_skill_name_from_github_url("https://github.com/anthropics/skills/tree/main/skills")
         self.assertIsNone(inferred)
+
+    def test_infer_skill_name_from_blob_skill_file_uses_repo_name(self) -> None:
+        inferred = infer_skill_name_from_github_url("https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md")
+        self.assertEqual(inferred, "darwin-skill")
 
     def test_extract_zip_subpath_extracts_only_requested_prefix(self) -> None:
         zip_buffer = io.BytesIO()
@@ -57,6 +70,20 @@ class SkillUpstreamTests(unittest.TestCase):
             self.assertTrue((dest / "SKILL.md").exists())
             self.assertTrue((dest / "references" / "a.txt").exists())
             self.assertFalse((dest / "skills" / "other" / "SKILL.md").exists())
+
+    def test_extract_zip_subpath_extracts_single_skill_file_to_root(self) -> None:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("repo-root/SKILL.md", "# darwin-skill")
+            zip_file.writestr("repo-root/README.md", "ignored")
+        zip_bytes = zip_buffer.getvalue()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dest = Path(temp_dir) / "out"
+            dest.mkdir()
+            _extract_zip_subpath(zip_bytes, "SKILL.md", dest, is_file=True)
+            self.assertTrue((dest / "SKILL.md").exists())
+            self.assertFalse((dest / "README.md").exists())
 
     def test_skill_upstream_state_service_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

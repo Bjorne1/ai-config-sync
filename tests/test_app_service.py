@@ -205,6 +205,83 @@ class AppServiceTests(unittest.TestCase):
 
         self.assertEqual(result["name"], "hv-analysis")
 
+    def test_add_skill_from_blob_skill_url_uses_repo_name_and_target_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skills_dir = root / "skills"
+            commands_dir = root / "commands"
+            skills_dir.mkdir()
+            commands_dir.mkdir()
+            config = {
+                "version": 4,
+                "syncMode": "copy",
+                "sourceDirs": {"skills": str(skills_dir), "commands": str(commands_dir)},
+                "environments": {"windows": {"enabled": True, "targets": {}}, "wsl": {"selectedDistro": None, "targets": {}}},
+                "resources": {"skills": {}, "commands": {}},
+                "commandSubfolderSupport": {"default": False, "tools": {"claude": True}},
+                "updateTools": {},
+            }
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                    "load_skill_upstreams": lambda: {},
+                    "save_skill_upstreams": lambda upstreams: upstreams,
+                }
+            )
+
+            with mock.patch("python_app.core.app_service.install_github_tree_to_dir", return_value="abc") as installer:
+                result = app_service.add_skill_from_url(
+                    "",
+                    "https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md",
+                )
+
+        self.assertEqual(result["name"], "darwin-skill")
+        self.assertEqual(result["url"], "https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md")
+        self.assertEqual(installer.call_args.args[1], skills_dir / "darwin-skill")
+
+    def test_set_skill_upstream_url_accepts_blob_skill_url_for_same_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skills_dir = root / "skills"
+            commands_dir = root / "commands"
+            skills_dir.mkdir()
+            commands_dir.mkdir()
+            config = {
+                "version": 4,
+                "syncMode": "copy",
+                "sourceDirs": {"skills": str(skills_dir), "commands": str(commands_dir)},
+                "environments": {"windows": {"enabled": True, "targets": {}}, "wsl": {"selectedDistro": None, "targets": {}}},
+                "resources": {"skills": {}, "commands": {}},
+                "commandSubfolderSupport": {"default": False, "tools": {"claude": True}},
+                "updateTools": {},
+            }
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                    "load_skill_upstreams": lambda: {},
+                    "save_skill_upstreams": lambda upstreams: upstreams,
+                }
+            )
+
+            with mock.patch("python_app.core.app_service.get_latest_commit_sha", return_value="abc"):
+                result = app_service.set_skill_upstream_url(
+                    ["darwin-skill"],
+                    "https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md",
+                )
+
+        self.assertEqual(
+            result["darwin-skill"]["url"],
+            "https://github.com/alchaincyf/darwin-skill/blob/master/SKILL.md",
+        )
+
     def test_sync_global_rules_uses_current_assignments(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
