@@ -1,0 +1,258 @@
+contract:
+  name: test-task-spec
+  version: "1.0.0"
+  role: runtime-input-contract
+  description: >
+    cloud_his 统一真实联调测试输入约束与复用模板。运行时必须先校验本文件，
+    缺字段、占位值、作用域冲突一律阻塞。已有示例用于复用高频场景，但没有匹配 task_id 时，
+    允许按目标服务 + 接口路径 + 请求方式走直接接口模式。
+  runtime_enforcement:
+    fail_on_missing_required_field: true
+    fail_on_placeholder_value: true
+    fail_on_empty_required_collection: true
+    fail_on_db_scope_mismatch: true
+    fail_on_missing_db_checks_when_required: true
+    fail_on_blocked_target_service: true
+    fail_on_unconfirmed_manual_service: true
+
+usage_modes:
+  - template_task
+  - ad_hoc_endpoint
+
+required_fields:
+  - target_service
+  - target_endpoint
+  - request_method
+  - request_payload_or_file_spec
+  - expected_http_signal
+  - expected_log_markers
+  - expected_redis_checks
+  - expected_db_checks
+  - expected_downstream_evidence
+  - cleanup_targets
+
+allowed_values:
+  request_method:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - PATCH
+  target_service:
+    - ai-service
+    - drg-service
+    - emr-service
+    - his-service
+    - interface-service
+    - pay-service
+    - report-service
+
+placeholder_values_blocked:
+  - 待定
+  - 默认
+  - 看情况
+  - TBD
+  - TODO
+  - REPLACE_ME
+  - CHANGEME
+  - your-command-here
+
+blocking_rules:
+  - "缺任一必填字段：任务状态为 BLOCKED。"
+  - "任一必填字段填入 placeholder_values_blocked：任务状态为 BLOCKED。"
+  - "expected_http_signal 为空：任务状态为 BLOCKED。"
+  - "expected_log_markers 为空数组：任务状态为 BLOCKED。"
+  - "expected_db_checks 字段缺失：任务状态为 BLOCKED。"
+  - "expected_db_checks.mode=required 且 checks 为空数组：任务状态为 BLOCKED。"
+  - "expected_downstream_evidence 为空数组：任务状态为 BLOCKED。"
+  - "cleanup_targets 字段缺失：任务状态为 BLOCKED。"
+  - "目标服务在 service-capability-matrix 中为 BLOCKED：任务不得执行。"
+  - "目标服务在 service-capability-matrix 中为 REQUIRES_MANUAL_CONFIRMATION 且未确认：任务不得执行。"
+  - "expected_db_checks 中所有实际生效的检查项，其 db_scope 不在目标服务 db_scopes 中：任务失败，不降级。"
+  - "request_payload_or_file_spec 不能只写“同上”“按默认”“空”。"
+  - "直接接口模式下，至少要提供目标服务、接口路径、请求方式。"
+
+template:
+  task_id: RUNTIME-TEST-001
+  summary: 用一句话描述本次真实测试要证明什么
+  target_service: emr-service
+  target_endpoint:
+    method: POST
+    path: /v1/example
+    requires_token: true
+  request_method: POST
+  request_payload_or_file_spec:
+    content_type: application/json
+    headers:
+      token: codex-cloud-his-dev-token
+    body: {}
+    files: []
+  expected_http_signal:
+    status_code: 200
+    must_contain:
+      - code
+    must_not_contain:
+      - 鉴权失败
+  expected_log_markers:
+    service: emr-service
+    markers:
+      - "进入目标接口"
+      - "调用下游完成"
+  expected_redis_checks:
+    mode: required
+    redis_key: TOKEN:SYS:codex-cloud-his-dev-token
+    expected_db_resolution: from_profile_config
+    ttl_should_be: -1
+    expected_fields:
+      - hospitalId
+      - userId
+  expected_db_checks:
+    mode: required
+    checks:
+      - db_scope: his
+        purpose: 核对主业务表是否按预期变更
+        sql: SELECT * FROM example_table WHERE id = 'example';
+        expected_result:
+          row_count: 1
+          key_fields:
+            status: SUCCESS
+  expected_downstream_evidence:
+    - dependency_service: ai-service
+      evidence_type: log_marker
+      signal: "AI 请求已发出"
+    - dependency_service: his-service
+      evidence_type: log_marker
+      signal: "HIS 数据已返回"
+  cleanup_targets:
+    redis_keys: []
+    db_cleanup:
+      - db_scope: his
+        purpose: 删除本次测试临时造的数据
+        by_interface: true
+        by_sql: false
+
+validation_notes:
+  - "request_method 与 target_endpoint.method 必须一致。"
+  - "controller 类级 RequestMapping 可以作为控制器家族模板前缀，但必须显式声明 target_endpoint.match_mode=prefix。"
+  - "当 target_endpoint.match_mode=prefix 时，真实执行阶段仍要补充方法级完整接口。"
+  - "AI 无 token 场景允许 expected_redis_checks.mode=skip。"
+  - "纯转发接口、纯查询接口、仅写统一访问日志的接口，允许 expected_db_checks.mode=skip。"
+  - "控制器家族模板允许 expected_db_checks.mode=per_endpoint，由子接口分别决定是否查库。"
+  - "如果任务只涉及 Redis 临时数据，cleanup_targets.db_cleanup 可以为空数组，但字段本身不能缺。"
+  - "如果任务会造非 Redis 临时数据，cleanup_targets.db_cleanup 至少要声明一项清理动作。"
+  - "example_tasks 是复用模板，不是唯一合法入口。"
+  - "没有匹配 task_id 时，允许按直接接口模式继续。"
+
+example_tasks:
+  - task_id: RUNTIME-TEST-AI-NO-TOKEN
+    summary: 验证 ai-service 接口在无 token 场景下不会被错误阻塞
+    target_service: ai-service
+    target_endpoint:
+      method: POST
+      path: /dify/v1/imageReportAnalysis/direct/sse
+      requires_token: false
+    request_method: POST
+    request_payload_or_file_spec:
+      content_type: multipart/form-data
+      headers: {}
+      body:
+        hospitalId: H0001
+        appCode: INSPECTION_ANALYSIS
+      files:
+        - field: file
+          source: ./tmp/example-report.png
+    expected_http_signal:
+      status_code: 200
+      must_contain:
+        - code
+      must_not_contain:
+        - token不能为空
+        - 鉴权失败
+    expected_log_markers:
+      service: ai-service
+      markers:
+        - "【Dify 上传文件】"
+        - "【Dify 对话流】"
+    expected_redis_checks:
+      mode: skip
+      redis_key: null
+      expected_db_resolution: not_applicable
+      ttl_should_be: null
+      expected_fields: []
+    expected_db_checks:
+      mode: required
+      checks:
+        - db_scope: wh_ai
+          purpose: 核对 AI 业务记录是否生成
+          sql: SELECT * FROM ai_task_log WHERE business_id = 'example' ORDER BY create_time DESC LIMIT 1;
+          expected_result:
+            row_count_at_least: 1
+    expected_downstream_evidence:
+      - dependency_service: dify
+        evidence_type: log_marker
+        signal: "【Dify 上传文件】"
+    cleanup_targets:
+      redis_keys: []
+      db_cleanup: []
+
+  - task_id: RUNTIME-TEST-EMR-AI-HIS
+    summary: 验证 emr-service 的 /v1/aiAssistant 控制器家族模板至少要声明联动下游证据
+    target_service: emr-service
+    target_endpoint:
+      match_mode: prefix
+      method: POST
+      path: /v1/aiAssistant
+      known_paths:
+        - /v1/aiAssistant/aiCustomChatFlow
+        - /v1/aiAssistant/medicalRecordQuality
+        - /v1/aiAssistant/inspectionReportInterpret
+      requires_token: true
+    request_method: POST
+    request_payload_or_file_spec:
+      content_type: application/json
+      headers:
+        token: codex-cloud-his-dev-token
+      body:
+        appCode: TREAT_SUGGEST_PLAN
+        user: codex
+        studiesUids:
+          - "1.2.840.example"
+      files: []
+    expected_http_signal:
+      status_code: 200
+      must_contain:
+        - code
+        - data
+      must_not_contain:
+        - token为空
+    expected_log_markers:
+      service: emr-service
+      markers:
+        - "进入 AI 助手接口"
+        - "调用 ai-service"
+    expected_redis_checks:
+      mode: required
+      redis_key: TOKEN:SYS:codex-cloud-his-dev-token
+      expected_db_resolution: from_profile_config
+      ttl_should_be: -1
+      expected_fields:
+        - hospitalId
+        - userCode
+    expected_db_checks:
+      mode: per_endpoint
+      default: skip
+      endpoint_rules:
+        - endpoint: /v1/aiAssistant/aiCustomChatFlow
+          mode: skip
+          reason: 纯对话转发，只要求 HTTP、日志、Redis、下游证据
+    expected_downstream_evidence:
+      - dependency_service: ai-service
+        evidence_type: log_marker
+        signal: "调用 ai-service"
+    cleanup_targets:
+      redis_keys: []
+      db_cleanup:
+        - db_scope: his
+          purpose: 清理本次 emr 联调临时数据
+          by_interface: true
+          by_sql: false

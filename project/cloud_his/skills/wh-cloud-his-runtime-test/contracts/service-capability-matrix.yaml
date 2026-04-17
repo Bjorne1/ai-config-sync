@@ -1,0 +1,252 @@
+contract:
+  name: service-capability-matrix
+  version: "1.0.0"
+  role: runtime-hard-contract
+  description: >
+    cloud_his 统一真实联调测试服务能力表。运行时只能以本文件为服务事实来源，
+    不能从其他说明文档、口头约定或临时经验推导启动规则。
+  owners:
+    - wh-cloud-his-runtime-test
+  runtime_enforcement:
+    ignore_non_contract_docs: true
+    fail_on_missing_service_record: true
+    fail_on_missing_required_field: true
+    fail_on_invalid_enum: true
+    fail_on_ready_with_unknown: true
+    fail_on_blocked_service_execution: true
+    fail_on_unconfirmed_manual_service_execution: true
+
+required_fields:
+  - service_name
+  - module_path
+  - launch_sources
+  - prelaunch_actions
+  - default_dependencies
+  - token_requirement
+  - redis_db_rule
+  - db_scopes
+  - evidence_status
+  - cleanup_rule
+  - notes
+
+allowed_values:
+  service_name:
+    - ai-service
+    - drg-service
+    - emr-service
+    - his-service
+    - interface-service
+    - pay-service
+    - report-service
+  prelaunch_actions:
+    - none
+    - prepare-drg-wsl-config
+    - manual_confirmation_required
+  token_requirement:
+    - required
+    - not_required
+    - conditional
+  redis_db_rule:
+    - from_profile_config
+    - from_runtime_file
+    - not_applicable
+    - unknown
+  db_scopes:
+    - his
+    - wh_ai
+    - wh_drg
+    - wh_pay
+    - wh_report
+    - wh_system
+  evidence_status:
+    - READY
+    - REQUIRES_MANUAL_CONFIRMATION
+    - BLOCKED
+  cleanup_rule:
+    - redis_only_expire
+    - non_redis_cleanup_required
+    - no_cleanup
+    - unknown
+
+behavior_rules:
+  - "任一必填字段缺失：该服务不得执行。"
+  - "任一枚举值非法：该服务不得执行。"
+  - "evidence_status=READY 时，redis_db_rule 和 cleanup_rule 不能为 unknown。"
+  - "evidence_status=REQUIRES_MANUAL_CONFIRMATION 时，未确认不得执行。"
+  - "evidence_status=BLOCKED 时，不得启动、不得请求、不得判通过。"
+  - "default_dependencies 仅代表默认联动依赖；具体接口仍需由 test-task-spec 明确下游证据。"
+  - "如果某服务对下游存在本机固定转发口径，运行时必须先满足该本机链路，再进入真实请求。"
+
+services:
+  - service_name: ai-service
+    module_path: wh-modules/ai-service
+    launch_sources:
+      - type: vscode_launch
+        path: .vscode/launch.json
+        locator: Spring Boot-AiApplication<ai-service>
+      - type: bootstrap
+        path: wh-modules/ai-service/src/main/resources/bootstrap-emr.yaml
+        locator: spring.application.name=ai-service
+      - type: bootstrap
+        path: wh-modules/ai-service/src/main/resources/bootstrap.yaml
+        locator: spring.profiles.active=emr
+    prelaunch_actions:
+      - none
+    default_dependencies: []
+    token_requirement: not_required
+    redis_db_rule: not_applicable
+    db_scopes:
+      - wh_ai
+    evidence_status: READY
+    cleanup_rule: no_cleanup
+    notes:
+      - "当前已知规则：ai-service 实际测试默认不要求 token。"
+      - "启动依据同时存在 launch.json 与 bootstrap-emr.yaml。"
+      - "给 emr-service 做 AI 联调时，本地可访问口径必须是 http://localhost:19087/ai。"
+
+  - service_name: drg-service
+    module_path: wh-modules/drg-service
+    launch_sources:
+      - type: vscode_launch
+        path: .vscode/launch.json
+        locator: Spring Boot-DrgApplication<drg-service>
+      - type: vscode_task
+        path: .vscode/tasks.json
+        locator: prepare-drg-wsl-config
+      - type: bootstrap
+        path: wh-modules/drg-service/src/main/resources/bootstrap-wcs.yaml
+        locator: spring.profiles.active=wcs
+    prelaunch_actions:
+      - prepare-drg-wsl-config
+    default_dependencies: []
+    token_requirement: conditional
+    redis_db_rule: from_runtime_file
+    db_scopes:
+      - wh_drg
+    evidence_status: READY
+    cleanup_rule: non_redis_cleanup_required
+    notes:
+      - "drg-service 当前真实启动依据是 launch.json + prepare-drg-wsl-config + runtime yaml。"
+      - "CLI 自动化必须先跑前置脚本，再按 wcs 运行时文件启动。"
+
+  - service_name: emr-service
+    module_path: wh-modules/emr-service
+    launch_sources:
+      - type: vscode_launch
+        path: .vscode/launch.json
+        locator: Spring Boot-EmrApplication<emr-service>
+      - type: bootstrap
+        path: wh-modules/emr-service/src/main/resources/bootstrap-emr.yaml
+        locator: spring.application.name=emr-service
+      - type: bootstrap
+        path: wh-modules/emr-service/src/main/resources/bootstrap-wh.yaml
+        locator: spring.application.name=emr-service
+    prelaunch_actions:
+      - none
+    default_dependencies:
+      - ai-service
+      - his-service
+    token_requirement: required
+    redis_db_rule: from_profile_config
+    db_scopes:
+      - his
+    evidence_status: READY
+    cleanup_rule: non_redis_cleanup_required
+    notes:
+      - "部分 emr 接口会联动 ai-service 与 his-service。"
+      - "Redis DB 需按真实 emr 配置解析，不能写死。"
+      - "AI 助手家族接口当前不是按服务名直连 ai-service，而是转发到 http://localhost:19087/ai。"
+      - "命中 /v1/aiAssistant/* 且依赖 ai-service 时，必须先确认本机 19087/ai 已就绪。"
+
+  - service_name: his-service
+    module_path: wh-modules/his-service
+    launch_sources:
+      - type: vscode_launch
+        path: .vscode/launch.json
+        locator: Spring Boot-HisApplication<his-service>
+      - type: bootstrap
+        path: wh-modules/his-service/src/main/resources/bootstrap-emr.yaml
+        locator: spring.application.name=his-service
+    prelaunch_actions:
+      - none
+    default_dependencies: []
+    token_requirement: required
+    redis_db_rule: from_profile_config
+    db_scopes:
+      - his
+    evidence_status: READY
+    cleanup_rule: non_redis_cleanup_required
+    notes:
+      - "当前仓内存在明确的 emr 启动配置与 launch.json 证据。"
+      - "Redis DB 需按真实 emr 配置解析，不能写死。"
+
+  - service_name: interface-service
+    module_path: wh-modules/interface-service
+    launch_sources:
+      - type: bootstrap
+        path: wh-modules/interface-service/src/main/resources/bootstrap.yaml
+        locator: spring.application.name=his-interface-service
+      - type: app_class
+        path: wh-modules/interface-service/src/main/java/com/whxx/hisinterfaceservice/HisInterfaceServiceApplication.java
+        locator: SpringApplication.run(HisInterfaceServiceApplication.class, args)
+    prelaunch_actions:
+      - manual_confirmation_required
+    default_dependencies: []
+    token_requirement: conditional
+    redis_db_rule: unknown
+    db_scopes:
+      - his
+      - wh_system
+    evidence_status: REQUIRES_MANUAL_CONFIRMATION
+    cleanup_rule: unknown
+    notes:
+      - "仓内有 bootstrap，但当前没有 launch.json 启动证据。"
+      - "服务名与 spring.application.name 不同，运行时需人工确认实际启动命令。"
+      - "READY 前必须补齐 Redis 库位与清理规则。"
+
+  - service_name: pay-service
+    module_path: wh-modules/pay-service
+    launch_sources:
+      - type: bootstrap
+        path: wh-modules/pay-service/src/main/resources/bootstrap.yaml
+        locator: spring.application.name=pay-service
+      - type: app_class
+        path: wh-modules/pay-service/src/main/java/com/whxx/pay/PayApplication.java
+        locator: SpringApplication.run(PayApplication.class, args)
+    prelaunch_actions:
+      - manual_confirmation_required
+    default_dependencies: []
+    token_requirement: conditional
+    redis_db_rule: unknown
+    db_scopes:
+      - wh_pay
+      - wh_system
+    evidence_status: REQUIRES_MANUAL_CONFIRMATION
+    cleanup_rule: unknown
+    notes:
+      - "仓内有 bootstrap，但当前没有 launch.json 启动证据。"
+      - "READY 前必须补齐实际启动方式、Redis 库位和清理规则。"
+
+  - service_name: report-service
+    module_path: wh-modules/report-service
+    launch_sources:
+      - type: app_class
+        path: wh-modules/report-service/src/main/java/com/whxx/report/ReportApplication.java
+        locator: SpringApplication.run(ReportApplication.class, args)
+      - type: code_evidence
+        path: wh-modules/report-service/src/main/java/com/whxx/report/common/LoginInfo.java
+        locator: loginRedisService + token dependent methods
+    prelaunch_actions:
+      - manual_confirmation_required
+    default_dependencies: []
+    token_requirement: required
+    redis_db_rule: unknown
+    db_scopes:
+      - wh_report
+      - wh_system
+    evidence_status: BLOCKED
+    cleanup_rule: unknown
+    notes:
+      - "当前仓内没有 report-service 的 bootstrap 启动配置文件。"
+      - "当前仓内没有 report-service 的 launch.json 启动证据。"
+      - "虽然代码显示依赖 token/Redis，但启动与运行证据不足，状态不得写成 READY。"
