@@ -7,12 +7,16 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QStyleOptionViewItem,
     QStyledItemDelegate,
+    QTabBar,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,7 +28,7 @@ from ..busy import busy_indicator_driver
 from ..event_filters import WheelBlocker
 from ..header_views import GroupedHeaderView
 from ..logo_matrix import LOGO_ACTIVE_ROLE, LOGO_BUSY_ROLE, LOGO_STATE_ROLE, LOGO_TOOL_ROLE, logo_root
-from ..pagination import Pager, paginate
+from ..pagination import Pager
 from ..pages.resource_selection import PageSelection
 from ..theme import SURFACE, tint
 from ..widgets import ActionButton, CardFrame, configure_table
@@ -32,11 +36,10 @@ from ..widgets import ActionButton, CardFrame, configure_table
 ROWS_PER_PAGE = 8
 BADGE_SIZE = QSize(40, 24)
 ICON_SIZE = 14
-ROW_HEIGHT_PARENT = 46
 ROW_HEIGHT_CHILD = 40
 COL_SELECT = 0
 COL_NAME = 1
-COL_PATH = 2
+COL_DESC = 2
 MATRIX_COLUMNS = (
     ("windows", "claude", "Claude"),
     ("windows", "codex", "Codex"),
@@ -46,11 +49,10 @@ MATRIX_COLUMNS = (
     ("wsl", "both", "一起"),
 )
 MATRIX_START = 3
-TABLE_HEADERS = ("选中", "项目 / Skill", "路径 / 配置", *(item[2] for item in MATRIX_COLUMNS))
+TABLE_HEADERS = ("选中", "Skill 名称", "描述", *(item[2] for item in MATRIX_COLUMNS))
 GROUPS = (("WIN", (3, 4, 5)), ("WSL", (6, 7, 8)))
+_TAB_ALL = "__all__"
 TOOL_LABELS = {"claude": "Claude", "codex": "Codex", "both": "Claude + Codex"}
-_ITEM_PROJECT = "project"
-_ITEM_SKILL = "skill"
 BUSY_BORDER = "#93c5fd"
 BUSY_BG = "#eff6ff"
 
@@ -72,15 +74,6 @@ def _tooltip_for_skill(skill: dict[str, object]) -> str:
     parts = [str(skill.get("description") or "").strip(), str(skill.get("path") or "").strip()]
     return "\n\n".join(part for part in parts if part)
 
-
-def _project_paths_summary(project: dict[str, object]) -> str:
-    return "\n".join(
-        [
-            f"源: {project.get('skillSourceDir') or '未配置'}",
-            f"WIN: {project.get('windowsProjectRoot') or '未配置'}",
-            f"WSL: {project.get('wslProjectRoot') or '未配置'}",
-        ]
-    )
 
 
 def _state_for_pair(
@@ -298,8 +291,7 @@ class ProjectSkillsPage(QWidget):
         self.assignments: dict[str, dict[str, dict[str, list[str]]]] = {}
         self.selected_keys: set[str] = set()
         self._display_items: list[dict[str, object]] = []
-        self._visible_projects: list[dict[str, object]] = []
-        self._expanded_projects: set[str] = set()
+        self._selected_project_id: str | None = None
         self._busy_cells: set[str] = set()
         self._pending_cells: dict[str, PendingProjectSkillToggle] = {}
         self._data_revision = 0
@@ -313,6 +305,7 @@ class ProjectSkillsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         layout.addWidget(self._build_toolbar_card())
+        layout.addWidget(self._build_project_bar())
         layout.addWidget(self._build_table_card(), 1)
 
     def _build_toolbar_card(self) -> QWidget:
@@ -321,7 +314,7 @@ class ProjectSkillsPage(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索项目名、Skill 名或路径")
+        self.search.setPlaceholderText("搜索 Skill 名称或描述")
         self.search.textChanged.connect(self._handle_filter_changed)
         self.refresh_button = ActionButton("重新扫描", "secondary")
         self.sync_button = ActionButton("同步选中", "secondary")
@@ -339,8 +332,25 @@ class ProjectSkillsPage(QWidget):
         card.body_layout.addWidget(self.meta)
         return card
 
+    def _build_project_bar(self) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self._project_tabs = QTabBar()
+        self._project_tabs.setExpanding(False)
+        self._project_tabs.addTab("全部")
+        self._project_tabs.setTabData(0, _TAB_ALL)
+        self._project_tabs.currentChanged.connect(self._handle_tab_changed)
+        layout.addWidget(self._project_tabs, 1)
+        self._detail_button = ActionButton("详情", "secondary")
+        self._detail_button.setFixedWidth(60)
+        self._detail_button.clicked.connect(self._show_project_detail)
+        layout.addWidget(self._detail_button)
+        return container
+
     def _build_table_card(self) -> QWidget:
-        card = CardFrame("项目 Skills 列表", "按项目分组显示；点击图标可单独同步或移除。")
+        card = CardFrame("Skills 列表", "点击图标可单独同步或移除。")
         self.table = QTableWidget(0, len(TABLE_HEADERS))
         self.table.setHorizontalHeaderLabels(TABLE_HEADERS)
         self.table.setHorizontalHeader(GroupedHeaderView(GROUPS, self.table))
@@ -366,6 +376,68 @@ class ProjectSkillsPage(QWidget):
         card.body_layout.addWidget(self.table, 1)
         return card
 
+    def _sync_project_tabs(self) -> None:
+        self._project_tabs.blockSignals(True)
+        previous_id = self._selected_project_id
+        while self._project_tabs.count() > 1:
+            self._project_tabs.removeTab(self._project_tabs.count() - 1)
+        for project in self.projects:
+            skill_count = len(project.get("skills", []))
+            label = f"{project['id']} ({skill_count})"
+            index = self._project_tabs.addTab(label)
+            self._project_tabs.setTabData(index, project["id"])
+        restore_index = 0
+        if previous_id is not None:
+            for i in range(self._project_tabs.count()):
+                if self._project_tabs.tabData(i) == previous_id:
+                    restore_index = i
+                    break
+        self._project_tabs.setCurrentIndex(restore_index)
+        self._selected_project_id = self._project_tabs.tabData(restore_index)
+        if self._selected_project_id == _TAB_ALL:
+            self._selected_project_id = None
+        self._project_tabs.blockSignals(False)
+
+    def _handle_tab_changed(self, index: int) -> None:
+        tab_data = self._project_tabs.tabData(index)
+        self._selected_project_id = None if tab_data == _TAB_ALL else tab_data
+        self._page_index = 0
+        self._rebuild_table()
+
+    def _show_project_detail(self) -> None:
+        project = self._current_project()
+        if project is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"项目详情 — {project['id']}")
+        dialog.setMinimumWidth(480)
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.addRow("项目 ID:", QLabel(str(project.get("id") or "")))
+        form.addRow("源目录:", QLabel(str(project.get("skillSourceDir") or "未配置")))
+        form.addRow("WIN 目标:", QLabel(str(project.get("windowsProjectRoot") or "未配置")))
+        form.addRow("WSL 目标:", QLabel(str(project.get("wslProjectRoot") or "未配置")))
+        skill_count = len(project.get("skills", []))
+        form.addRow("Skills 数量:", QLabel(str(skill_count)))
+        if project.get("sourceMissing"):
+            warn = QLabel("源目录不存在")
+            warn.setStyleSheet("color: #dc2626; font-weight: bold;")
+            form.addRow("警告:", warn)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _current_project(self) -> dict[str, object] | None:
+        if self._selected_project_id is None:
+            return None
+        for project in self.projects:
+            if project["id"] == self._selected_project_id:
+                return project
+        return None
+
     def set_context(self, projects: list[dict[str, object]]) -> None:
         self._data_revision += 1
         self.projects = deepcopy(projects)
@@ -375,14 +447,13 @@ class ProjectSkillsPage(QWidget):
             for key, pending in self._pending_cells.items()
             if key in self._busy_cells
         }
-        ids = {project["id"] for project in self.projects}
-        self._expanded_projects = (self._expanded_projects & ids) | ids
         valid_keys = {
             _skill_key(project["id"], skill["name"])
             for project in self.projects
             for skill in project.get("skills", [])
         }
         self.selected_keys &= valid_keys
+        self._sync_project_tabs()
         self._rebuild_table()
 
     def set_busy(
@@ -453,107 +524,50 @@ class ProjectSkillsPage(QWidget):
         self._page_index = 0
         self._rebuild_table()
 
-    def _filtered_projects(self) -> list[dict[str, object]]:
-        query = self.search.text().strip().lower()
-        if not query:
+    def _active_projects(self) -> list[dict[str, object]]:
+        if self._selected_project_id is None:
             return self.projects
-        filtered: list[dict[str, object]] = []
-        for project in self.projects:
-            project_text = "\n".join(
-                [
-                    str(project.get("id") or ""),
-                    str(project.get("skillSourceDir") or ""),
-                    str(project.get("windowsProjectRoot") or ""),
-                    str(project.get("wslProjectRoot") or ""),
-                ]
-            ).lower()
-            if query in project_text:
-                filtered.append(project)
-                continue
-            skills = [
-                skill for skill in project.get("skills", [])
-                if query in str(skill.get("name") or "").lower() or query in str(skill.get("path") or "").lower()
-            ]
-            if skills:
-                filtered.append({**project, "skills": skills})
-        return filtered
+        return [p for p in self.projects if p["id"] == self._selected_project_id]
+
+    def _filtered_skills(self) -> list[dict[str, object]]:
+        query = self.search.text().strip().lower()
+        items: list[dict[str, object]] = []
+        for project in self._active_projects():
+            for skill in project.get("skills", []):
+                if query and query not in str(skill.get("name") or "").lower() and query not in str(skill.get("description") or "").lower():
+                    continue
+                items.append({"project": project, "skill": skill})
+        return items
 
     def _rebuild_table(self) -> None:
-        rows = self._filtered_projects()
-        self._visible_projects, self._page_index, page_count, total = paginate(rows, self._page_index, self._page_size)
-        self._display_items = self._build_display_items()
+        all_items = self._filtered_skills()
+        total = len(all_items)
+        page_count = max(1, (total + self._page_size - 1) // self._page_size)
+        self._page_index = min(self._page_index, page_count - 1)
+        start = self._page_index * self._page_size
+        self._display_items = all_items[start : start + self._page_size]
         self._render_table()
         self.pager.set_state(self._page_index, page_count, total)
         self._update_meta()
-
-    def _build_display_items(self) -> list[dict[str, object]]:
-        items: list[dict[str, object]] = []
-        for project in self._visible_projects:
-            items.append({"type": _ITEM_PROJECT, "project": project})
-            if project["id"] not in self._expanded_projects:
-                continue
-            for skill in project.get("skills", []):
-                items.append({"type": _ITEM_SKILL, "project": project, "skill": skill})
-        return items
 
     def _render_table(self) -> None:
         self._updating_table = True
         self.table.blockSignals(True)
         self.table.setRowCount(len(self._display_items))
         for row_index, item in enumerate(self._display_items):
-            if item["type"] == _ITEM_PROJECT:
-                self._fill_project_row(row_index, item["project"])
-            else:
-                self._fill_skill_row(row_index, item["project"], item["skill"])
+            self._fill_skill_row(row_index, item["project"], item["skill"])
         self.table.blockSignals(False)
         self._updating_table = False
         self._page_selection.update_header_state()
 
-    def _fill_project_row(self, row_index: int, project: dict[str, object]) -> None:
-        self.table.setCellWidget(row_index, COL_SELECT, QWidget())
-        self.table.setCellWidget(row_index, COL_NAME, self._project_name_cell(project))
-        path_item = QTableWidgetItem(_project_paths_summary(project))
-        path_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        path_item.setToolTip(_project_paths_summary(project))
-        self.table.setItem(row_index, COL_PATH, path_item)
-        for column in range(MATRIX_START, len(TABLE_HEADERS)):
-            item = QTableWidgetItem("")
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            self.table.setItem(row_index, column, item)
-        self.table.setRowHeight(row_index, ROW_HEIGHT_PARENT)
-
-    def _project_name_cell(self, project: dict[str, object]) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setSpacing(2)
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(4)
-        toggle = QPushButton("▼" if project["id"] in self._expanded_projects else "▶")
-        toggle.setFixedSize(20, 20)
-        toggle.setStyleSheet("QPushButton { border: none; background: transparent; color: #6b7280; }")
-        toggle.clicked.connect(lambda _=False, project_id=project["id"]: self._toggle_project(project_id))
-        top.addWidget(toggle)
-        top.addWidget(QLabel(project["id"]))
-        count = QLabel(f"({len(project.get('skills', []))})")
-        count.setObjectName("muted")
-        top.addWidget(count)
-        top.addStretch(1)
-        layout.addLayout(top)
-        if project.get("sourceMissing"):
-            warn = QLabel("源目录不存在")
-            warn.setObjectName("muted")
-            layout.addWidget(warn)
-        return container
-
     def _fill_skill_row(self, row_index: int, project: dict[str, object], skill: dict[str, object]) -> None:
         self.table.setCellWidget(row_index, COL_SELECT, self._skill_checkbox(project["id"], skill["name"]))
         self.table.setCellWidget(row_index, COL_NAME, self._skill_name_cell(skill))
-        path_item = QTableWidgetItem(str(skill.get("path") or ""))
-        path_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        path_item.setToolTip(_tooltip_for_skill(skill))
-        self.table.setItem(row_index, COL_PATH, path_item)
+        desc_text = str(skill.get("description") or "")
+        desc_item = QTableWidgetItem(desc_text)
+        desc_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        desc_item.setToolTip(_tooltip_for_skill(skill))
+        self.table.setItem(row_index, COL_DESC, desc_item)
         for offset, (environment_id, tool_key, _label) in enumerate(MATRIX_COLUMNS, start=MATRIX_START):
             self.table.setItem(row_index, offset, self._matrix_item(project["id"], skill, environment_id, tool_key))
         self.table.setRowHeight(row_index, ROW_HEIGHT_CHILD)
@@ -573,7 +587,7 @@ class ProjectSkillsPage(QWidget):
     def _skill_name_cell(self, skill: dict[str, object]) -> QWidget:
         container = QWidget()
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(24, 0, 0, 0)
+        layout.setContentsMargins(4, 0, 0, 0)
         layout.setSpacing(0)
         label = QLabel(skill["name"])
         label.setToolTip(_tooltip_for_skill(skill))
@@ -624,13 +638,6 @@ class ProjectSkillsPage(QWidget):
         active = _has_active_target({**row, "projectId": project_id}, self.assignments, environment_id, tool_key, entry)
         return active, entry["state"] if entry else ("detected" if active else "idle")
 
-    def _toggle_project(self, project_id: str) -> None:
-        if project_id in self._expanded_projects:
-            self._expanded_projects.discard(project_id)
-        else:
-            self._expanded_projects.add(project_id)
-        self._rebuild_table()
-
     def _toggle_selected(self, item_key: str, state: int) -> None:
         if state == Qt.CheckState.Checked.value:
             self.selected_keys.add(item_key)
@@ -640,12 +647,10 @@ class ProjectSkillsPage(QWidget):
         self._update_meta()
 
     def _visible_keys(self) -> list[str]:
-        keys: list[str] = []
-        for item in self._display_items:
-            if item["type"] != _ITEM_SKILL:
-                continue
-            keys.append(_skill_key(item["project"]["id"], item["skill"]["name"]))
-        return keys
+        return [
+            _skill_key(item["project"]["id"], item["skill"]["name"])
+            for item in self._display_items
+        ]
 
     def _update_meta(self) -> None:
         total_skills = sum(len(project.get("skills", [])) for project in self.projects)
@@ -661,8 +666,6 @@ class ProjectSkillsPage(QWidget):
         if index.row() >= len(self._display_items):
             return
         item = self._display_items[index.row()]
-        if item["type"] != _ITEM_SKILL:
-            return
         environment_id, tool_key, _label = MATRIX_COLUMNS[index.column() - MATRIX_START]
         self._toggle_skill(item["project"], item["skill"], environment_id, tool_key)
 
@@ -730,8 +733,6 @@ class ProjectSkillsPage(QWidget):
 
     def _refresh_row(self, skill: dict[str, object]) -> None:
         for row_index, item in enumerate(self._display_items):
-            if item["type"] != _ITEM_SKILL:
-                continue
             if item["project"]["id"] != skill["projectId"] or item["skill"]["name"] != skill["name"]:
                 continue
             for offset, (environment_id, tool_key, _label) in enumerate(MATRIX_COLUMNS, start=MATRIX_START):
