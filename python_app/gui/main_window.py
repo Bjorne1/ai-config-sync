@@ -302,13 +302,19 @@ class MainWindow(QMainWindow):
         self.skills_page.set_busy(
             self._busy("scanSkills"),
             self._busy("syncSkills"),
+            self._busy_names("resourceCell:skills"),
             upstream_busy,
         )
         self.project_skills_page.set_busy(
             self._busy("scanProjectSkills"),
             self._busy("syncProjectSkills"),
+            self._busy_names("projectSkillCell"),
         )
-        self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
+        self.commands_page.set_busy(
+            self._busy("scanCommands"),
+            self._busy("syncCommands"),
+            self._busy_names("resourceCell:commands"),
+        )
         busy_gr_targets: set[tuple[str, str]] = set()
         for suffix in self._busy_names("syncGlobalRule"):
             parts = suffix.split(":", 1)

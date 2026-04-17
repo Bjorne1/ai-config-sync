@@ -33,6 +33,7 @@ TEXT_SECONDARY = "#64748b"
 TEXT_MUTED = "#94a3b8"
 
 STATE_COLORS = {
+    "busy": (INFO, "#dbeafe"),
     "healthy": (SUCCESS, "#dcfce7"),
     "missing": (WARNING, "#fef3c7"),
     "outdated": (WARNING, "#ffedd5"),
@@ -179,6 +180,11 @@ def build_stylesheet() -> str:
         background: #1d4ed8;
         border-color: #1d4ed8;
     }}
+    QPushButton#primaryButton[busy="true"] {{
+        background: {ACCENT_HOVER};
+        border-color: {ACCENT_HOVER};
+        color: white;
+    }}
     QPushButton#secondaryButton {{
         background: {SURFACE};
         border: 1px solid {BORDER};
@@ -194,6 +200,11 @@ def build_stylesheet() -> str:
         border-color: {ACCENT_HOVER};
         color: {ACCENT_HOVER};
     }}
+    QPushButton#secondaryButton[busy="true"] {{
+        background: {ACCENT_SOFT};
+        border-color: {ACCENT};
+        color: {ACCENT_HOVER};
+    }}
     QPushButton#dangerButton {{
         background: {SURFACE};
         border: 1px solid {ERROR};
@@ -206,6 +217,11 @@ def build_stylesheet() -> str:
     QPushButton#dangerButton:pressed {{
         background: #fee2e2;
         border-color: #b91c1c;
+        color: #b91c1c;
+    }}
+    QPushButton#dangerButton[busy="true"] {{
+        background: #fef2f2;
+        border-color: {ERROR};
         color: #b91c1c;
     }}
     QPushButton:disabled {{

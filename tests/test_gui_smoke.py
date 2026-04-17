@@ -8,7 +8,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QMessageBox, QScrollArea
 
 from python_app.controller import AppController
-from python_app.gui.logo_matrix import LOGO_ACTIVE_ROLE, LOGO_TOOL_ROLE, ToolLogoDelegate
+from python_app.gui.logo_matrix import (
+    LOGO_ACTIVE_ROLE,
+    LOGO_BUSY_ROLE,
+    LOGO_STATE_ROLE,
+    LOGO_TOOL_ROLE,
+    ToolLogoDelegate,
+)
 from python_app.gui.header_views import GroupedHeaderView
 from python_app.gui.main_window import MainWindow
 from python_app.gui.pages.global_rule_page import GlobalRulePage
@@ -109,6 +115,56 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertFalse(item.data(LOGO_ACTIVE_ROLE))
         self.assertIn("目标缺失", item.toolTip())
         self.assertEqual(page.table.item(0, 11).text(), "")
+
+    def test_resource_page_marks_busy_cell_without_dim_flicker(self) -> None:
+        page = ResourcePage("commands")
+        page.set_rows(
+            [
+                {
+                    "name": "brainstorming.md",
+                    "path": r"D:\wcs_project\ai-config-sync\commands\brainstorming.md",
+                    "isDirectory": False,
+                    "effectiveTargets": {"windows": ["codex"]},
+                    "configuredTargets": {"windows": ["codex"]},
+                    "detectedTargets": {"windows": ["codex"]},
+                    "entries": [],
+                }
+            ]
+        )
+
+        busy_key = page._busy_key("brainstorming.md", "windows", "codex")
+        page.set_busy(False, False, {busy_key})
+
+        item = page.table.item(0, 4)
+        self.assertTrue(item.data(LOGO_BUSY_ROLE))
+        self.assertEqual(item.data(LOGO_STATE_ROLE), "busy")
+        self.assertEqual(item.toolTip(), "处理中…")
+
+    def test_resource_page_rolls_back_single_cell_when_busy_finishes_without_refresh(self) -> None:
+        page = ResourcePage("commands")
+        page.set_rows(
+            [
+                {
+                    "name": "brainstorming.md",
+                    "path": r"D:\wcs_project\ai-config-sync\commands\brainstorming.md",
+                    "isDirectory": False,
+                    "effectiveTargets": {"windows": ["codex"]},
+                    "configuredTargets": {"windows": ["codex"]},
+                    "detectedTargets": {"windows": ["codex"]},
+                    "entries": [],
+                }
+            ]
+        )
+
+        page._handle_matrix_clicked(page.table.model().index(0, 4))
+        busy_key = page._busy_key("brainstorming.md", "windows", "codex")
+
+        page.set_busy(False, False, {busy_key})
+        self.assertFalse(page.table.item(0, 4).data(LOGO_ACTIVE_ROLE))
+
+        page.set_busy(False, False, set())
+
+        self.assertTrue(page.table.item(0, 4).data(LOGO_ACTIVE_ROLE))
 
     def test_resource_page_keeps_source_missing_target_dark_when_target_absent(self) -> None:
         page = ResourcePage("skills")
@@ -249,6 +305,38 @@ class GuiSmokeTests(unittest.TestCase):
             captured[0]["assignments"]["cloud_his"]["deploy-cloud-service"]["windows"],
             ["codex"],
         )
+
+    def test_project_skills_page_marks_both_cell_busy_when_single_target_is_processing(self) -> None:
+        page = ProjectSkillsPage()
+        page.set_context(
+            [
+                {
+                    "id": "cloud_his",
+                    "skillSourceDir": r"D:\wcs_project\ai-config-sync\project\cloud_his\skills",
+                    "windowsProjectRoot": r"D:\repo\cloud_his",
+                    "wslProjectRoot": r"~/projects/cloud_his",
+                    "sourceMissing": False,
+                    "skills": [
+                        {
+                            "projectId": "cloud_his",
+                            "name": "deploy-cloud-service",
+                            "path": r"D:\wcs_project\ai-config-sync\project\cloud_his\skills\deploy-cloud-service",
+                            "isDirectory": True,
+                            "description": "",
+                            "effectiveTargets": {},
+                            "entries": [],
+                        }
+                    ],
+                }
+            ]
+        )
+
+        busy_key = page._busy_key("cloud_his", "deploy-cloud-service", "windows", "codex")
+        page.set_busy(False, False, {busy_key})
+
+        both_item = page.table.item(1, 5)
+        self.assertTrue(both_item.data(LOGO_BUSY_ROLE))
+        self.assertEqual(both_item.data(LOGO_STATE_ROLE), "busy")
 
     def test_config_page_uses_scroll_area_for_project_skill_settings(self) -> None:
         page = ConfigPage()

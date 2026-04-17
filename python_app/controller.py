@@ -20,6 +20,7 @@ class SyncRequest:
     commit_targets: dict[str, list[str]] | None
     commit_assignments: dict[str, dict[str, list[str]]] | None
     commit_remove: bool
+    busy_key: str | None
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class ProjectSkillSyncRequest:
     items: list[dict[str, str]]
     assignments: dict[str, dict[str, dict[str, list[str]]]]
     commit_assignments: dict[str, dict[str, dict[str, list[str]]]]
+    busy_key: str | None
 
 
 class AppController(QObject):
@@ -37,6 +39,7 @@ class AppController(QObject):
         self.service = service or create_app_service()
         self.logs: list[dict[str, str]] = []
         self.busy: dict[str, bool] = {"initial": True}
+        self._held_busy_keys: set[str] = set()
         self._workers: list[TaskThread] = []
         self._accumulated_tool_results: list[dict[str, object]] = []
         self._accumulated_gr_results: list[dict[str, object]] = []
@@ -46,12 +49,17 @@ class AppController(QObject):
     def start(self) -> None:
         self.refresh_snapshot(reset_error=False, busy_key="initial")
 
-    def refresh_snapshot(self, reset_error: bool = True, busy_key: str = "refresh") -> None:
+    def refresh_snapshot(
+        self,
+        reset_error: bool = True,
+        busy_key: str = "refresh",
+        release_busy_keys: tuple[str, ...] = (),
+    ) -> None:
         self._run_task(
             busy_key,
             "刷新总览",
             self._fetch_snapshot,
-            self._after_snapshot,
+            lambda snapshot: self._after_snapshot(snapshot, release_busy_keys),
             log_success=busy_key != "initial",
             reset_error=reset_error,
         )
@@ -99,10 +107,17 @@ class AppController(QObject):
             "workflowStatuses": self.service.get_workflow_statuses(),
         }
 
-    def _after_snapshot(self, snapshot: dict[str, object]) -> None:
+    def _after_snapshot(
+        self,
+        snapshot: dict[str, object],
+        release_busy_keys: tuple[str, ...] = (),
+    ) -> None:
         self.window.set_snapshot(snapshot)
         self._refresh_update_tool_statuses(snapshot)
         self._auto_check_skill_updates(snapshot)
+        for key in release_busy_keys:
+            self._held_busy_keys.discard(key)
+            self._set_busy(key, False)
 
     def _refresh_update_tool_statuses(self, snapshot: dict[str, object]) -> None:
         if self.busy.get("loadUpdateToolStatuses"):
@@ -166,8 +181,9 @@ class AppController(QObject):
         self.refresh_snapshot(busy_key="scanProjectSkills")
 
     def _sync_selected(self, kind: str, payload: object) -> None:
-        key = "syncSkills" if kind == "skills" else "syncCommands"
+        default_key = "syncSkills" if kind == "skills" else "syncCommands"
         request = self._parse_sync_request(payload)
+        key = request.busy_key or default_key
         label = "同步 Skills" if kind == "skills" else "同步 Commands"
         if request.action == "remove":
             label = "移除 Skills" if kind == "skills" else "移除 Commands"
@@ -184,12 +200,24 @@ class AppController(QObject):
                 return self.service.upgrade_resources(kind, request.names, request.assignments)
             return self.service.sync_resources(kind, request.names, request.assignments)
 
-        self._run_task(key, label, task, lambda result: self._after_partial_sync(kind, result))
+        self._run_task(
+            key,
+            label,
+            task,
+            lambda result: self._after_partial_sync(kind, result, request.busy_key),
+            hold_busy_on_success=bool(request.busy_key),
+        )
 
-    def _after_partial_sync(self, kind: str, result: list[dict[str, object]]) -> None:
+    def _after_partial_sync(
+        self,
+        kind: str,
+        result: list[dict[str, object]],
+        release_busy_key: str | None = None,
+    ) -> None:
         self.window.set_last_sync_summary(f"{kind.capitalize()} {summarize_sync(result)}")
         refresh_key = "refreshAfterSyncSkills" if kind == "skills" else "refreshAfterSyncCommands"
-        self.refresh_snapshot(reset_error=False, busy_key=refresh_key)
+        release_keys = (release_busy_key,) if release_busy_key else ()
+        self.refresh_snapshot(reset_error=False, busy_key=refresh_key, release_busy_keys=release_keys)
 
     def _project_skill_sync(self, payload: object) -> None:
         request = self._parse_project_skill_sync_request(payload)
@@ -203,15 +231,25 @@ class AppController(QObject):
             return self.service.sync_selected_project_skills(request.items, request.assignments)
 
         self._run_task(
-            "syncProjectSkills",
+            request.busy_key or "syncProjectSkills",
             "同步项目 Skills",
             task,
-            self._after_project_skill_sync,
+            lambda result: self._after_project_skill_sync(result, request.busy_key),
+            hold_busy_on_success=bool(request.busy_key),
         )
 
-    def _after_project_skill_sync(self, result: list[dict[str, object]]) -> None:
+    def _after_project_skill_sync(
+        self,
+        result: list[dict[str, object]],
+        release_busy_key: str | None = None,
+    ) -> None:
         self.window.set_last_sync_summary(f"项目Skills {summarize_sync(result)}")
-        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncProjectSkills")
+        release_keys = (release_busy_key,) if release_busy_key else ()
+        self.refresh_snapshot(
+            reset_error=False,
+            busy_key="refreshAfterSyncProjectSkills",
+            release_busy_keys=release_keys,
+        )
 
     def _save_config(self, patch: dict[str, object]) -> None:
         self._run_task(
@@ -245,14 +283,20 @@ class AppController(QObject):
         targets = sync_request["targets"]
         assignments = sync_request["assignments"]
 
-        if targets and len(targets) == 1 and assignments is None:
+        if targets and len(targets) == 1:
             target = targets[0]
             key = f"syncGlobalRule:{target['environmentId']}:{target['toolId']}"
 
             def task() -> object:
                 return self.service.sync_global_rules(targets, assignments)
 
-            self._run_task(key, "同步全局规则", task, self._after_global_rule_sync_one)
+            self._run_task(
+                key,
+                "同步全局规则",
+                task,
+                lambda result: self._after_global_rule_sync_one(key, result),
+                hold_busy_on_success=True,
+            )
             return
 
         def task() -> object:
@@ -270,7 +314,7 @@ class AppController(QObject):
         )
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRules")
 
-    def _after_global_rule_sync_one(self, result: list[dict[str, object]]) -> None:
+    def _after_global_rule_sync_one(self, release_busy_key: str, result: list[dict[str, object]]) -> None:
         self._accumulated_gr_results.extend(result)
         all_results = self._accumulated_gr_results
         success = sum(1 for item in all_results if item.get("success"))
@@ -279,7 +323,11 @@ class AppController(QObject):
         self.window.set_last_sync_summary(
             f"全局规则 成功 {success} · 跳过 {skipped} · 失败 {failed}"
         )
-        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRuleOne")
+        self.refresh_snapshot(
+            reset_error=False,
+            busy_key="refreshAfterSyncGlobalRuleOne",
+            release_busy_keys=(release_busy_key,),
+        )
 
     def _cleanup(self) -> None:
         self._run_task("cleanup", "执行清理", self.service.cleanup_invalid, self._after_cleanup)
@@ -304,18 +352,20 @@ class AppController(QObject):
 
     def _update_tool(self, name: str, target_version: object) -> None:
         resolved_version = str(target_version or "").strip() or None
+        busy_key = f"updateTool:{name}"
         self._run_task(
-            f"updateTool:{name}",
+            busy_key,
             f"更新工具：{name}",
             lambda: self.service.update_tool(name, resolved_version),
-            self._after_update_tool,
+            lambda results: self._after_update_tool(busy_key, results),
+            hold_busy_on_success=True,
         )
 
-    def _after_update_tool(self, results: list[dict[str, object]]) -> None:
+    def _after_update_tool(self, release_busy_key: str, results: list[dict[str, object]]) -> None:
         self._accumulated_tool_results.extend(results)
         self.window.set_tool_results(list(self._accumulated_tool_results))
         key = f"refreshAfterUpdateTool:{results[0]['name']}" if results else "refreshAfterUpdateTool"
-        self.refresh_snapshot(reset_error=False, busy_key=key)
+        self.refresh_snapshot(reset_error=False, busy_key=key, release_busy_keys=(release_busy_key,))
 
     def _save_tool_definitions(self, definitions: dict[str, dict[str, str]]) -> None:
         self._run_task(
@@ -403,12 +453,20 @@ class AppController(QObject):
             busy_key,
             task_label,
             lambda: self.service.workflow_action(workflow_id, target_key, resolved_action),
-            lambda result: self._after_workflow_action(task_label, workflow_id, target_key, result),
+            lambda result: self._after_workflow_action(
+                busy_key,
+                task_label,
+                workflow_id,
+                target_key,
+                result,
+            ),
             log_success=False,
+            hold_busy_on_success=True,
         )
 
     def _after_workflow_action(
         self,
+        release_busy_key: str,
         task_label: str,
         workflow_id: str,
         target_key: str,
@@ -433,6 +491,7 @@ class AppController(QObject):
         self.refresh_snapshot(
             reset_error=False,
             busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
+            release_busy_keys=(release_busy_key,),
         )
 
     def _resolve_workflow_action(
@@ -535,24 +594,38 @@ class AppController(QObject):
         on_success: Callable[[object], None],
         log_success: bool = True,
         reset_error: bool = True,
+        hold_busy_on_success: bool = False,
     ) -> None:
         if reset_error:
             self.window.set_error_message(None)
         self._set_busy(busy_key, True)
         worker = TaskThread(task)
         self._workers.append(worker)
-        worker.succeeded.connect(lambda result: self._handle_success(label, result, on_success, log_success))
+        worker.succeeded.connect(
+            lambda result: self._handle_success(
+                busy_key,
+                label,
+                result,
+                on_success,
+                log_success,
+                hold_busy_on_success,
+            )
+        )
         worker.failed.connect(lambda message: self._handle_error(label, message))
         worker.finished.connect(lambda: self._on_worker_finished(busy_key, worker))
         worker.start()
 
     def _handle_success(
         self,
+        busy_key: str,
         label: str,
         result: object,
         on_success: Callable[[object], None],
         log_success: bool,
+        hold_busy_on_success: bool,
     ) -> None:
+        if hold_busy_on_success:
+            self._held_busy_keys.add(busy_key)
         on_success(result)
         if log_success:
             self._push_log(label, "执行完成", "ok")
@@ -562,7 +635,9 @@ class AppController(QObject):
         self._push_log(label, message, "error")
 
     def _on_worker_finished(self, busy_key: str, worker: TaskThread) -> None:
-        self._set_busy(busy_key, False)
+        if busy_key not in self._held_busy_keys or not worker.completed_successfully:
+            self._held_busy_keys.discard(busy_key)
+            self._set_busy(busy_key, False)
         self._workers = [item for item in self._workers if item is not worker]
 
     def _set_busy(self, key: str, value: bool) -> None:
@@ -585,7 +660,7 @@ class AppController(QObject):
         if isinstance(payload, list):
             if any(not isinstance(name, str) for name in payload):
                 raise ValueError("names must be a list of strings.")
-            return SyncRequest("sync", payload, None, None, None, False)
+            return SyncRequest("sync", payload, None, None, None, False, None)
         if not isinstance(payload, dict):
             raise ValueError("payload must be a dict or list.")
 
@@ -618,6 +693,9 @@ class AppController(QObject):
             commit_assignments = raw_commit_assignments
 
         commit_remove = bool(payload.get("commitRemove", False))
+        busy_key = payload.get("busyKey")
+        if busy_key is not None and not isinstance(busy_key, str):
+            raise ValueError("busyKey must be a string.")
         if commit_targets is not None and (commit_assignments is not None or commit_remove):
             raise ValueError("commitTargets cannot be combined with commitAssignments/commitRemove.")
         if commit_assignments is not None and commit_remove:
@@ -626,7 +704,15 @@ class AppController(QObject):
             raise ValueError("commitTargets requires exactly one resource name.")
         if commit_assignments is not None and set(raw_names) != set(commit_assignments.keys()):
             raise ValueError("commitAssignments keys must match names.")
-        return SyncRequest(action, raw_names, assignments, commit_targets, commit_assignments, commit_remove)
+        return SyncRequest(
+            action,
+            raw_names,
+            assignments,
+            commit_targets,
+            commit_assignments,
+            commit_remove,
+            busy_key,
+        )
 
     def _apply_commit(self, kind: str, request: SyncRequest) -> None:
         if request.commit_targets is not None:
@@ -710,6 +796,9 @@ class AppController(QObject):
             raise ValueError("project skill assignments must be a dict.")
         if not isinstance(commit_assignments, dict):
             raise ValueError("project skill commitAssignments must be a dict.")
+        busy_key = payload.get("busyKey")
+        if busy_key is not None and not isinstance(busy_key, str):
+            raise ValueError("project skill busyKey must be a string.")
         normalized_items: list[dict[str, str]] = []
         for item in items:
             if not isinstance(item, dict):
@@ -718,7 +807,13 @@ class AppController(QObject):
             skill_name = str(item.get("skillName") or "").strip()
             if project_id and skill_name:
                 normalized_items.append({"projectId": project_id, "skillName": skill_name})
-        return ProjectSkillSyncRequest(action, normalized_items, assignments, commit_assignments)
+        return ProjectSkillSyncRequest(
+            action,
+            normalized_items,
+            assignments,
+            commit_assignments,
+            busy_key,
+        )
 
     def _parse_global_rule_targets(
         self,

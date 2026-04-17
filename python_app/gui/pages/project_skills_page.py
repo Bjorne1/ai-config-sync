@@ -1,8 +1,11 @@
 from copy import deepcopy
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -17,9 +20,10 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.resource_operations import aggregate_states
+from ..busy import busy_indicator_driver
 from ..event_filters import WheelBlocker
 from ..header_views import GroupedHeaderView
-from ..logo_matrix import LOGO_ACTIVE_ROLE, LOGO_STATE_ROLE, LOGO_TOOL_ROLE, logo_root
+from ..logo_matrix import LOGO_ACTIVE_ROLE, LOGO_BUSY_ROLE, LOGO_STATE_ROLE, LOGO_TOOL_ROLE, logo_root
 from ..pagination import Pager, paginate
 from ..pages.resource_selection import PageSelection
 from ..theme import SURFACE, tint
@@ -47,6 +51,17 @@ GROUPS = (("WIN", (3, 4, 5)), ("WSL", (6, 7, 8)))
 TOOL_LABELS = {"claude": "Claude", "codex": "Codex", "both": "Claude + Codex"}
 _ITEM_PROJECT = "project"
 _ITEM_SKILL = "skill"
+BUSY_BORDER = "#93c5fd"
+BUSY_BG = "#eff6ff"
+
+
+@dataclass(frozen=True)
+class PendingProjectSkillToggle:
+    busy_key: str
+    project_id: str
+    skill_name: str
+    previous_assignments: dict[str, list[str]] | None
+    start_revision: int
 
 
 def _skill_key(project_id: str, skill_name: str) -> str:
@@ -142,6 +157,8 @@ class ProjectSkillLogoDelegate(QStyledItemDelegate):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmaps = self._load_pixmaps()
+        self._busy_driver = busy_indicator_driver()
+        self._busy_driver.frame_changed.connect(self._handle_busy_frame)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         base = super().sizeHint(option, index)
@@ -154,25 +171,43 @@ class ProjectSkillLogoDelegate(QStyledItemDelegate):
             return
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._paint_badge(painter, option, tool_id, bool(index.data(LOGO_ACTIVE_ROLE)), str(index.data(LOGO_STATE_ROLE) or "idle"))
+        self._paint_badge(
+            painter,
+            option,
+            index,
+            tool_id,
+            bool(index.data(LOGO_ACTIVE_ROLE)),
+            str(index.data(LOGO_STATE_ROLE) or "idle"),
+        )
         painter.restore()
 
-    def _paint_badge(self, painter: QPainter, option: QStyleOptionViewItem, tool_id: str, active: bool, state: str) -> None:
-        border, background = self._badge_colors(state, active)
+    def _paint_badge(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+        tool_id: str,
+        active: bool,
+        state: str,
+    ) -> None:
+        busy = bool(index.data(LOGO_BUSY_ROLE))
+        border, background = self._badge_colors(state, active, busy)
         badge_rect = self._badge_rect(option)
         painter.setPen(QPen(QColor(border), 1))
         painter.setBrush(QColor(background))
         painter.drawRoundedRect(badge_rect, 8, 8)
-        self._draw_logo(painter, badge_rect, tool_id, active)
-        if not active:
+        self._draw_logo(painter, badge_rect, tool_id, active, busy)
+        if not active and not busy:
             overlay = QColor("#c5ced8")
             overlay.setAlpha(108)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(overlay)
             painter.drawRoundedRect(badge_rect, 8, 8)
+        if busy:
+            self._draw_spinner(painter, badge_rect)
 
-    def _draw_logo(self, painter: QPainter, badge_rect: QRect, tool_id: str, active: bool) -> None:
-        if not active:
+    def _draw_logo(self, painter: QPainter, badge_rect: QRect, tool_id: str, active: bool, busy: bool) -> None:
+        if not active and not busy:
             painter.setOpacity(0.42)
         if tool_id == "both":
             self._draw_dual_logo(painter, badge_rect)
@@ -204,7 +239,9 @@ class ProjectSkillLogoDelegate(QStyledItemDelegate):
         top = option.rect.y() + (option.rect.height() - BADGE_SIZE.height()) // 2
         return QRect(left, top, BADGE_SIZE.width(), BADGE_SIZE.height())
 
-    def _badge_colors(self, state: str, active: bool) -> tuple[str, str]:
+    def _badge_colors(self, state: str, active: bool, busy: bool = False) -> tuple[str, str]:
+        if busy:
+            return BUSY_BORDER, BUSY_BG
         if not active:
             return "#d3dce6", "#edf1f5"
         palette = {
@@ -221,6 +258,24 @@ class ProjectSkillLogoDelegate(QStyledItemDelegate):
         }
         foreground = palette.get(state, "#16a34a")
         return tint(foreground, 96), SURFACE
+
+    def _draw_spinner(self, painter: QPainter, badge_rect: QRect) -> None:
+        spinner_rect = QRect(
+            badge_rect.right() - 13,
+            badge_rect.y() + 2,
+            9,
+            9,
+        )
+        pen = QPen(QColor("#2563eb"), 1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        start_angle = (self._busy_driver.frame * 90) * 16
+        painter.drawArc(spinner_rect, start_angle, 220 * 16)
+
+    def _handle_busy_frame(self, _frame: int) -> None:
+        parent = self.parent()
+        if isinstance(parent, QAbstractItemView):
+            parent.viewport().update()
 
     def _load_pixmaps(self) -> dict[str, QPixmap]:
         root = logo_root()
@@ -245,6 +300,9 @@ class ProjectSkillsPage(QWidget):
         self._display_items: list[dict[str, object]] = []
         self._visible_projects: list[dict[str, object]] = []
         self._expanded_projects: set[str] = set()
+        self._busy_cells: set[str] = set()
+        self._pending_cells: dict[str, PendingProjectSkillToggle] = {}
+        self._data_revision = 0
         self._page_index = 0
         self._page_size = ROWS_PER_PAGE
         self._updating_table = False
@@ -309,8 +367,14 @@ class ProjectSkillsPage(QWidget):
         return card
 
     def set_context(self, projects: list[dict[str, object]]) -> None:
+        self._data_revision += 1
         self.projects = deepcopy(projects)
         self.assignments = self._initial_assignments(self.projects)
+        self._pending_cells = {
+            key: pending
+            for key, pending in self._pending_cells.items()
+            if key in self._busy_cells
+        }
         ids = {project["id"] for project in self.projects}
         self._expanded_projects = (self._expanded_projects & ids) | ids
         valid_keys = {
@@ -321,10 +385,24 @@ class ProjectSkillsPage(QWidget):
         self.selected_keys &= valid_keys
         self._rebuild_table()
 
-    def set_busy(self, refresh_busy: bool, sync_busy: bool) -> None:
+    def set_busy(
+        self,
+        refresh_busy: bool,
+        sync_busy: bool,
+        cell_busy_keys: set[str] = frozenset(),
+    ) -> None:
+        next_busy_cells = set(cell_busy_keys)
+        busy_changed = next_busy_cells != self._busy_cells
+        released_keys = self._busy_cells - next_busy_cells
+        self._busy_cells = next_busy_cells
+        self._resolve_released_busy_cells(released_keys)
         self.refresh_button.set_busy(refresh_busy)
         self.sync_button.set_busy(sync_busy)
         self.remove_button.set_busy(sync_busy)
+        if busy_changed and not released_keys:
+            self._rebuild_table()
+            return
+        self.table.viewport().update()
 
     def _initial_assignments(
         self,
@@ -341,6 +419,35 @@ class ProjectSkillsPage(QWidget):
             if skill_assignments:
                 assignments[project["id"]] = skill_assignments
         return assignments
+
+    def _busy_key(
+        self,
+        project_id: str,
+        skill_name: str,
+        environment_id: str,
+        tool_key: str,
+    ) -> str:
+        return f"projectSkillCell:{project_id}:{skill_name}:{environment_id}:{tool_key}"
+
+    def _resolve_released_busy_cells(self, released_keys: set[str]) -> None:
+        for busy_key in released_keys:
+            pending = self._pending_cells.pop(busy_key, None)
+            if pending is None:
+                continue
+            if self._data_revision > pending.start_revision:
+                continue
+            project_assignments = self.assignments.get(pending.project_id, {})
+            if pending.previous_assignments:
+                project_assignments[pending.skill_name] = deepcopy(pending.previous_assignments)
+                self.assignments[pending.project_id] = project_assignments
+                continue
+            project_assignments.pop(pending.skill_name, None)
+            if project_assignments:
+                self.assignments[pending.project_id] = project_assignments
+            else:
+                self.assignments.pop(pending.project_id, None)
+        if released_keys:
+            self._rebuild_table()
 
     def _handle_filter_changed(self) -> None:
         self._page_index = 0
@@ -483,11 +590,25 @@ class ProjectSkillsPage(QWidget):
         item = QTableWidgetItem()
         item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        name = str(row.get("name", ""))
+        busy = self._busy_key(project_id, name, environment_id, tool_key) in self._busy_cells
+        if tool_key == "both":
+            busy = busy or any(
+                self._busy_key(project_id, name, environment_id, child_tool) in self._busy_cells
+                for child_tool in ("claude", "codex")
+            )
         active, state = self._cell_state(project_id, row, environment_id, tool_key)
+        if busy:
+            state = "busy"
         item.setData(LOGO_ACTIVE_ROLE, active)
         item.setData(LOGO_STATE_ROLE, state)
         item.setData(LOGO_TOOL_ROLE, tool_key)
-        item.setToolTip(_cell_tooltip({**row, "projectId": project_id}, self.assignments, environment_id, tool_key))
+        item.setData(LOGO_BUSY_ROLE, busy)
+        item.setToolTip(
+            "处理中…"
+            if busy
+            else _cell_tooltip({**row, "projectId": project_id}, self.assignments, environment_id, tool_key)
+        )
         return item
 
     def _cell_state(
@@ -553,15 +674,26 @@ class ProjectSkillsPage(QWidget):
         tool_key: str,
     ) -> None:
         project_id = project["id"]
+        busy_key = self._busy_key(project_id, skill["name"], environment_id, tool_key)
+        if busy_key in self._busy_cells:
+            return
         active, _state = self._cell_state(project_id, skill, environment_id, tool_key)
         tools = ("claude", "codex") if tool_key == "both" else (tool_key,)
         action = "remove" if active else "sync"
+        self._pending_cells[busy_key] = PendingProjectSkillToggle(
+            busy_key=busy_key,
+            project_id=project_id,
+            skill_name=skill["name"],
+            previous_assignments=deepcopy(self.assignments.get(project_id, {}).get(skill["name"])),
+            start_revision=self._data_revision,
+        )
         self._mutate_assignment(project_id, skill["name"], environment_id, tools, not active)
         payload = {
             "action": action,
             "items": [{"projectId": project_id, "skillName": skill["name"]}],
             "assignments": {project_id: {skill["name"]: {environment_id: list(tools)}}},
             "commitAssignments": deepcopy(self.assignments),
+            "busyKey": busy_key,
         }
         self.sync_requested.emit(payload)
         self._refresh_row({**skill, "projectId": project_id})

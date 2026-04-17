@@ -2,13 +2,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap, QPen
-from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
+from .busy import busy_indicator_driver
 from .theme import STATE_COLORS, SURFACE, tint
 
 LOGO_ACTIVE_ROLE = Qt.ItemDataRole.UserRole
 LOGO_STATE_ROLE = Qt.ItemDataRole.UserRole + 1
 LOGO_TOOL_ROLE = Qt.ItemDataRole.UserRole + 2
+LOGO_BUSY_ROLE = Qt.ItemDataRole.UserRole + 3
 
 LOGO_FILENAMES = {
     "claude": "Claude.png",
@@ -41,6 +43,8 @@ BADGE_SIZE = QSize(40, 24)
 ICON_SIZE = 15
 INACTIVE_BG = "#edf1f5"
 INACTIVE_BORDER = "#d3dce6"
+BUSY_BORDER = "#93c5fd"
+BUSY_BG = "#eff6ff"
 
 
 def logo_root() -> Path:
@@ -91,6 +95,8 @@ class ToolLogoDelegate(QStyledItemDelegate):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmaps = self._load_pixmaps()
+        self._busy_driver = busy_indicator_driver()
+        self._busy_driver.frame_changed.connect(self._handle_busy_frame)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         base = super().sizeHint(option, index)
@@ -111,41 +117,64 @@ class ToolLogoDelegate(QStyledItemDelegate):
             return
         active = bool(index.data(LOGO_ACTIVE_ROLE))
         state = str(index.data(LOGO_STATE_ROLE) or "idle")
-        border, background = self._badge_colors(state, active)
+        busy = bool(index.data(LOGO_BUSY_ROLE))
+        border, background = self._badge_colors(state, active, busy)
         badge_rect = self._badge_rect(option)
         painter.setPen(QPen(QColor(border), 1))
         painter.setBrush(QColor(background))
         painter.drawRoundedRect(badge_rect, 8, 8)
-        self._draw_logo(painter, badge_rect, tool_id, active)
-        if not active:
+        self._draw_logo(painter, badge_rect, tool_id, active, busy)
+        if not active and not busy:
             overlay = QColor("#c5ced8")
             overlay.setAlpha(108)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(overlay)
             painter.drawRoundedRect(badge_rect, 8, 8)
+        if busy:
+            self._draw_spinner(painter, badge_rect)
 
     def _badge_rect(self, option: QStyleOptionViewItem):
         left = option.rect.x() + (option.rect.width() - BADGE_SIZE.width()) // 2
         top = option.rect.y() + (option.rect.height() - BADGE_SIZE.height()) // 2
         return QRect(left, top, BADGE_SIZE.width(), BADGE_SIZE.height())
 
-    def _draw_logo(self, painter: QPainter, badge_rect, tool_id: str, active: bool) -> None:
+    def _draw_logo(self, painter: QPainter, badge_rect, tool_id: str, active: bool, busy: bool) -> None:
         pixmap = self._pixmaps.get(tool_id)
         if pixmap is None:
             return
         icon = pixmap.scaled(ICON_SIZE, ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        if not active:
+        if not active and not busy:
             painter.setOpacity(0.42)
         left = badge_rect.x() + (badge_rect.width() - icon.width()) // 2
         top = badge_rect.y() + (badge_rect.height() - icon.height()) // 2
         painter.drawPixmap(left, top, icon)
         painter.setOpacity(1.0)
 
-    def _badge_colors(self, state: str, active: bool) -> tuple[str, str]:
+    def _badge_colors(self, state: str, active: bool, busy: bool = False) -> tuple[str, str]:
+        if busy:
+            return BUSY_BORDER, BUSY_BG
         if not active:
             return INACTIVE_BORDER, INACTIVE_BG
         foreground, _background = STATE_COLORS.get(state, STATE_COLORS["healthy"])
         return tint(foreground, 96), SURFACE
+
+    def _draw_spinner(self, painter: QPainter, badge_rect: QRect) -> None:
+        spinner_rect = QRect(
+            badge_rect.right() - 13,
+            badge_rect.y() + 2,
+            9,
+            9,
+        )
+        pen = QPen(QColor("#2563eb"), 1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        start_angle = (self._busy_driver.frame * 90) * 16
+        painter.drawArc(spinner_rect, start_angle, 220 * 16)
+
+    def _handle_busy_frame(self, _frame: int) -> None:
+        parent = self.parent()
+        if isinstance(parent, QAbstractItemView):
+            parent.viewport().update()
 
     def _load_pixmaps(self) -> dict[str, QPixmap]:
         root = logo_root()

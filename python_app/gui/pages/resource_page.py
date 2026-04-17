@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import dataclass
 from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -19,6 +20,7 @@ from ...core.tool_definitions import TOOL_IDS
 from ..event_filters import WheelBlocker
 from ..logo_matrix import (
     LOGO_ACTIVE_ROLE,
+    LOGO_BUSY_ROLE,
     LOGO_STATE_ROLE,
     LOGO_TOOL_ROLE,
     ACTION_COLUMN,
@@ -45,6 +47,14 @@ ROW_HEIGHT_CHILD = 36
 ENVIRONMENT_IDS = ("windows", "wsl")
 _ITEM_RESOURCE = "resource"
 _ITEM_CHILD = "child"
+
+
+@dataclass(frozen=True)
+class PendingResourceToggle:
+    busy_key: str
+    name: str
+    previous_assignments: dict[str, list[str]] | None
+    start_revision: int
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -144,6 +154,9 @@ class ResourcePage(QWidget):
         self._visible_rows: list[dict[str, object]] = []
         self._expanded_names: set[str] = set()
         self._display_items: list[dict[str, object]] = []
+        self._busy_cells: set[str] = set()
+        self._pending_cells: dict[str, PendingResourceToggle] = {}
+        self._data_revision = 0
         self._upstream_inventory: list[dict[str, object]] = []
         self._upstreams: dict[str, dict[str, object]] = {}
         self._update_results: dict[str, dict[str, object]] = {}
@@ -237,9 +250,10 @@ class ResourcePage(QWidget):
                 else:
                     item.setToolTip("操作：copy 模式下，源比目标新时可升级。")
         self._logo_delegate = ToolLogoDelegate(self.table)
+        self._frozen_logo_delegate = ToolLogoDelegate(frozen_view)
         for column in range(3, MATRIX_END_COLUMN + 1):
             self.table.setItemDelegateForColumn(column, self._logo_delegate)
-            frozen_view.setItemDelegateForColumn(column, self._logo_delegate)
+            frozen_view.setItemDelegateForColumn(column, self._frozen_logo_delegate)
         self.table.clicked.connect(self._handle_matrix_clicked)
         frozen_view.clicked.connect(self._handle_matrix_clicked)
         self.table.sync_frozen_view()
@@ -303,11 +317,17 @@ class ResourcePage(QWidget):
         )
 
     def set_rows(self, rows: list[dict[str, object]]) -> None:
+        self._data_revision += 1
         self.rows = deepcopy(rows)
         self.assignments = {
             row["name"]: deepcopy(row["effectiveTargets"])
             for row in rows
             if self._has_assignments(row["effectiveTargets"])
+        }
+        self._pending_cells = {
+            key: pending
+            for key, pending in self._pending_cells.items()
+            if key in self._busy_cells
         }
         existing_names = {row["name"] for row in rows}
         self.selected_names &= existing_names
@@ -321,7 +341,18 @@ class ResourcePage(QWidget):
         visible = {row["name"] for row in self._filtered_rows()}
         return sorted(self.selected_names & visible)
 
-    def set_busy(self, rescan_busy: bool, sync_busy: bool, upstream_busy: bool = False) -> None:
+    def set_busy(
+        self,
+        rescan_busy: bool,
+        sync_busy: bool,
+        cell_busy_keys: set[str] = frozenset(),
+        upstream_busy: bool = False,
+    ) -> None:
+        next_busy_cells = set(cell_busy_keys)
+        busy_changed = next_busy_cells != self._busy_cells
+        released_keys = self._busy_cells - next_busy_cells
+        self._busy_cells = next_busy_cells
+        self._resolve_released_busy_cells(released_keys)
         self.rescan_button.set_busy(rescan_busy)
         self.sync_button.set_busy(sync_busy)
         self.upgrade_button.set_busy(sync_busy or upstream_busy)
@@ -332,6 +363,11 @@ class ResourcePage(QWidget):
             self.set_url_button.set_busy(upstream_busy)
         if self.check_button:
             self.check_button.set_busy(upstream_busy)
+        if busy_changed and not released_keys:
+            self._rebuild_table()
+            return
+        self.table.viewport().update()
+        self.table.frozen_view().viewport().update()
 
     def _handle_filter_changed(self) -> None:
         self._page_index = 0
@@ -512,6 +548,23 @@ class ResourcePage(QWidget):
     def _build_upgrade_assignments(self, names: list[str]) -> dict[str, dict[str, list[str]]]:
         return {name: deepcopy(self.assignments.get(name, {})) for name in names}
 
+    def _busy_key(self, name: str, environment_id: str, tool_id: str) -> str:
+        return f"resourceCell:{self.kind}:{name}:{environment_id}:{tool_id}"
+
+    def _resolve_released_busy_cells(self, released_keys: set[str]) -> None:
+        for busy_key in released_keys:
+            pending = self._pending_cells.pop(busy_key, None)
+            if pending is None:
+                continue
+            if self._data_revision > pending.start_revision:
+                continue
+            if pending.previous_assignments:
+                self.assignments[pending.name] = deepcopy(pending.previous_assignments)
+            else:
+                self.assignments.pop(pending.name, None)
+        if released_keys:
+            self._rebuild_table()
+
     def _toggle_tool(self, name: str, environment_id: str, tool_id: str, state: int) -> None:
         targets = deepcopy(self.assignments.get(name, {}))
         tools = list(targets.get(environment_id, []))
@@ -547,11 +600,26 @@ class ResourcePage(QWidget):
         resource = self._display_items[row]["row"]
         environment_id, tool_id, _label, _tooltip = MATRIX_COLUMNS[index.column() - 3]
         name = resource["name"]
+        busy_key = self._busy_key(name, environment_id, tool_id)
+        if busy_key in self._busy_cells:
+            return
         active = tool_id in self.assignments.get(name, {}).get(environment_id, [])
         state = Qt.CheckState.Unchecked.value if active else Qt.CheckState.Checked.value
+        self._pending_cells[busy_key] = PendingResourceToggle(
+            busy_key=busy_key,
+            name=name,
+            previous_assignments=deepcopy(self.assignments.get(name)),
+            start_revision=self._data_revision,
+        )
         self._toggle_tool(name, environment_id, tool_id, state)
         self._refresh_matrix_cell(row, resource, environment_id, tool_id)
-        payload = {"action": "sync" if state == Qt.CheckState.Checked.value else "remove", "names": [name], "assignments": {name: {environment_id: [tool_id]}}, "commitTargets": deepcopy(self.assignments.get(name, {}))}
+        payload = {
+            "action": "sync" if state == Qt.CheckState.Checked.value else "remove",
+            "names": [name],
+            "assignments": {name: {environment_id: [tool_id]}},
+            "commitTargets": deepcopy(self.assignments.get(name, {})),
+            "busyKey": busy_key,
+        }
         self.sync_requested.emit(self.kind, payload)
 
     def _handle_upgrade_clicked(self, index: QModelIndex) -> None:
@@ -608,13 +676,15 @@ class ResourcePage(QWidget):
         environment_id: str,
         tool_id: str,
     ) -> None:
+        busy = self._busy_key(str(row.get("name", "")), environment_id, tool_id) in self._busy_cells
         entry = find_matrix_entry(row, environment_id, tool_id)
         active = self._has_visible_target(row, environment_id, tool_id, entry)
-        state = entry["state"] if entry else ("detected" if active else "idle")
+        state = "busy" if busy else (entry["state"] if entry else ("detected" if active else "idle"))
         item.setData(LOGO_ACTIVE_ROLE, active)
         item.setData(LOGO_STATE_ROLE, state)
         item.setData(LOGO_TOOL_ROLE, tool_id)
-        item.setToolTip(matrix_tooltip(environment_id, tool_id, active, entry))
+        item.setData(LOGO_BUSY_ROLE, busy)
+        item.setToolTip("处理中…" if busy else matrix_tooltip(environment_id, tool_id, active, entry))
 
     def _has_visible_target(
         self,

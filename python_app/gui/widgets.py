@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .busy import busy_indicator_driver
 from .header_views import GroupedHeaderView
 from .theme import ACCENT, BORDER, STATE_COLORS, SURFACE, create_mono_font
 
@@ -137,10 +138,52 @@ class ActionButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._base_label = label
         self._variant = variant
+        self._busy = False
+        self._busy_driver = busy_indicator_driver()
+        self._busy_driver.frame_changed.connect(self._handle_busy_frame)
 
     def set_busy(self, busy: bool) -> None:
-        self.setDisabled(busy)
-        self.setText("处理中..." if busy else self._base_label)
+        self._busy = busy
+        self.setProperty("busy", busy)
+        self.setCursor(
+            Qt.CursorShape.ArrowCursor if busy else Qt.CursorShape.PointingHandCursor
+        )
+        self._refresh_label()
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def is_busy(self) -> bool:
+        return self._busy
+
+    def mousePressEvent(self, event) -> None:
+        if self._busy:
+            event.ignore()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._busy:
+            event.ignore()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        if self._busy:
+            event.ignore()
+            return
+        super().keyPressEvent(event)
+
+    def _handle_busy_frame(self, _frame: int) -> None:
+        if not self._busy:
+            return
+        self._refresh_label()
+
+    def _refresh_label(self) -> None:
+        if self._busy:
+            self.setText(f"{self._busy_driver.glyph()} {self._base_label}")
+            return
+        self.setText(self._base_label)
 
 
 class NoWheelComboBox(QComboBox):
