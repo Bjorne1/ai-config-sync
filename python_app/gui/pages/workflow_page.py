@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..feedback import confirm_destructive
 from ..widgets import ActionButton, BadgeLabel, CardFrame
 
 
@@ -133,9 +134,19 @@ class WorkflowTargetRow(QWidget):
 
     def _add_button(self, label: str, variant: str, action: str) -> None:
         button = ActionButton(label, variant)
-        button.clicked.connect(lambda _=False, a=action: self.action_requested.emit(a))
+        button.clicked.connect(lambda _=False, a=action: self._on_action_clicked(a))
         self._button_layout.addWidget(button)
         self._buttons.append(button)
+
+    def _on_action_clicked(self, action: str) -> None:
+        if action == "uninstall":
+            if not confirm_destructive(
+                self,
+                "确认卸载工作流",
+                "即将卸载该工作流，相关配置将被移除。\n\n确定继续？",
+            ):
+                return
+        self.action_requested.emit(action)
 
 
 class WorkflowCard(CardFrame):

@@ -171,6 +171,7 @@ class AppController(QObject):
             f"Commands {summarize_sync(result['commands'])}"
         )
         self.window.set_last_sync_summary(summary)
+        self.window.show_status("success", "全量同步完成", summary)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncAll")
 
     def _rescan_kind(self, kind: str) -> None:
@@ -214,7 +215,9 @@ class AppController(QObject):
         result: list[dict[str, object]],
         release_busy_key: str | None = None,
     ) -> None:
-        self.window.set_last_sync_summary(f"{kind.capitalize()} {summarize_sync(result)}")
+        summary = f"{kind.capitalize()} {summarize_sync(result)}"
+        self.window.set_last_sync_summary(summary)
+        self.window.show_status("success", f"{kind.capitalize()} 同步完成", summary)
         refresh_key = "refreshAfterSyncSkills" if kind == "skills" else "refreshAfterSyncCommands"
         release_keys = (release_busy_key,) if release_busy_key else ()
         self.refresh_snapshot(reset_error=False, busy_key=refresh_key, release_busy_keys=release_keys)
@@ -309,9 +312,9 @@ class AppController(QObject):
         success = sum(1 for item in result if item.get("success"))
         skipped = sum(1 for item in result if item.get("skipped"))
         failed = len(result) - success - skipped
-        self.window.set_last_sync_summary(
-            f"全局规则 成功 {success} · 跳过 {skipped} · 失败 {failed}"
-        )
+        summary = f"全局规则 成功 {success} · 跳过 {skipped} · 失败 {failed}"
+        self.window.set_last_sync_summary(summary)
+        self.window.show_status("success", "规则同步完成", summary)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncGlobalRules")
 
     def _after_global_rule_sync_one(self, release_busy_key: str, result: list[dict[str, object]]) -> None:
@@ -334,6 +337,9 @@ class AppController(QObject):
 
     def _after_cleanup(self, result: dict[str, object]) -> None:
         self.window.set_cleanup_result(result)
+        cleaned = result.get("cleaned", [])
+        detail = f"已清理 {len(cleaned)} 个目标" if isinstance(cleaned, list) else ""
+        self.window.show_status("success", "清理完成", detail)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterCleanup")
 
     def _update_tools(self, payload: object) -> None:
@@ -348,6 +354,8 @@ class AppController(QObject):
 
     def _after_update_tools(self, results: list[dict[str, object]]) -> None:
         self.window.set_tool_results(results)
+        names = [str(r.get("name", "")) for r in results if isinstance(r, dict)]
+        self.window.show_status("success", "工具更新完成", "、".join(names) if names else None)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterUpdateTools")
 
     def _update_tool(self, name: str, target_version: object) -> None:
@@ -364,6 +372,8 @@ class AppController(QObject):
     def _after_update_tool(self, release_busy_key: str, results: list[dict[str, object]]) -> None:
         self._accumulated_tool_results.extend(results)
         self.window.set_tool_results(list(self._accumulated_tool_results))
+        name = str(results[0]["name"]) if results else ""
+        self.window.show_status("success", "工具更新完成", name or None)
         key = f"refreshAfterUpdateTool:{results[0]['name']}" if results else "refreshAfterUpdateTool"
         self.refresh_snapshot(reset_error=False, busy_key=key, release_busy_keys=(release_busy_key,))
 
@@ -488,6 +498,7 @@ class AppController(QObject):
                 preview += f"；其余 {hidden} 项已省略"
             detail = f"{detail}；{preview}"
         self._push_log(task_label, detail, "ok")
+        self.window.show_status("success", task_label, detail)
         self.refresh_snapshot(
             reset_error=False,
             busy_key=f"refreshAfterWorkflowAction:{workflow_id}:{target_key}",
@@ -631,8 +642,18 @@ class AppController(QObject):
             self._push_log(label, "执行完成", "ok")
 
     def _handle_error(self, label: str, message: str) -> None:
-        self.window.set_error_message(f"{label}: {message}")
+        friendly = self._friendly_error(message)
+        self.window.set_error_message(f"{label}: {friendly}")
         self._push_log(label, message, "error")
+
+    def _friendly_error(self, message: str) -> str:
+        if "PermissionError" in message or "权限" in message:
+            return f"{message}\n请以管理员身份运行，或在系统设置中启用开发者模式。"
+        if "FileNotFoundError" in message or "找不到" in message:
+            return f"{message}\n请确认源目录路径正确且可访问。"
+        if "WslError" in message or "WSL" in message:
+            return f"{message}\n请确认 WSL 已正确安装并启动。"
+        return message
 
     def _on_worker_finished(self, busy_key: str, worker: TaskThread) -> None:
         if busy_key not in self._held_busy_keys or not worker.completed_successfully:

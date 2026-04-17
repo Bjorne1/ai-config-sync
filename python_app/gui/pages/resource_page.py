@@ -35,6 +35,7 @@ from ..logo_matrix import (
     matrix_column,
     matrix_tooltip,
 )
+from ..feedback import confirm_destructive
 from ..pagination import Pager, paginate
 from .resource_selection import PageSelection
 from ..widgets import ActionButton, CardFrame, FrozenRightTableWidget, configure_table
@@ -285,6 +286,15 @@ class ResourcePage(QWidget):
 
     def _emit_remove(self) -> None:
         names = self.get_selected_names()
+        if not names:
+            return
+        label = "Skills" if self.kind == "skills" else "Commands"
+        if not confirm_destructive(
+            self,
+            f"确认移除 {label}",
+            f"即将移除 {len(names)} 个 {label}，此操作不可撤销。\n\n确定继续？",
+        ):
+            return
         assignments = self._build_bulk_assignments(names)
         self.sync_requested.emit(
             self.kind,

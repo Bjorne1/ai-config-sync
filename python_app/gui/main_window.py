@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .dashboard import build_issue_rows, build_resource_rows, count_cleanup_candidates, overview_stats
+from .feedback import StatusBanner, confirm_destructive
 from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
 from .pages.global_rule_page import GlobalRulePage
@@ -82,6 +84,7 @@ class MainWindow(QMainWindow):
         self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
         self.setStyleSheet(build_stylesheet())
         self._build_ui()
+        self._setup_shortcuts()
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -121,19 +124,24 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        self.error_banner = QLabel("")
-        self.error_banner.setWordWrap(True)
-        self.error_banner.hide()
-        self.error_banner.setStyleSheet(
-            "border: 1px solid #dc2626; border-radius: 8px;"
-            " padding: 10px 12px; background: #fee2e2; color: #991b1b;"
-        )
-        layout.addWidget(self.error_banner)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pageStack")
         layout.addWidget(self.pages, 1)
         self._create_pages()
+        self.status_banner = StatusBanner.attach(wrapper)
         return wrapper
+
+    def _setup_shortcuts(self) -> None:
+        QShortcut(QKeySequence("F5"), self).activated.connect(self.refresh_requested.emit)
+        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(self.refresh_requested.emit)
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.sync_all_requested.emit)
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self.status_banner.dismiss)
+        for index, key in enumerate(PAGE_KEYS):
+            if index >= 9:
+                break
+            QShortcut(QKeySequence(f"Ctrl+{index + 1}"), self).activated.connect(
+                lambda page_key=key: self.set_current_page(page_key)
+            )
 
     def _create_pages(self) -> None:
         self.overview_page = OverviewPage()
@@ -235,8 +243,13 @@ class MainWindow(QMainWindow):
         self._refresh_views()
 
     def set_error_message(self, message: str | None) -> None:
-        self.error_banner.setVisible(bool(message))
-        self.error_banner.setText(message or "")
+        if message:
+            self.status_banner.show_message("error", message)
+        else:
+            self.status_banner.hide()
+
+    def show_status(self, level: str, title: str, detail: str | None = None) -> None:
+        self.status_banner.show_message(level, title, detail)
 
     def set_busy(self, busy: dict[str, bool]) -> None:
         self.busy = {**busy}

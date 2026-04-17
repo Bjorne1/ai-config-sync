@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
+from ..feedback import confirm_destructive
 from ..dashboard import summarize_cleanup
 from ..event_filters import WheelBlocker
 from ..pagination import Pager, paginate
@@ -33,7 +34,7 @@ class CleanupPage(QWidget):
         self.summary_text.setObjectName("muted")
         self.summary_text.setWordWrap(True)
         self.run_button = ActionButton("执行清理", "danger")
-        self.run_button.clicked.connect(self.cleanup_requested.emit)
+        self.run_button.clicked.connect(self._on_run_clicked)
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 4, 0, 0)
         action_row.setSpacing(12)
@@ -80,6 +81,15 @@ class CleanupPage(QWidget):
             for column, value in enumerate(values):
                 self.summary_table.setItem(row_index, column, QTableWidgetItem(str(value)))
         self.pager.set_state(self._page_index, page_count, total)
+
+    def _on_run_clicked(self) -> None:
+        if not confirm_destructive(
+            self,
+            "确认执行清理",
+            "将删除所有无效的同步目标文件，此操作不可撤销。\n\n确定继续？",
+        ):
+            return
+        self.cleanup_requested.emit()
 
     def set_busy(self, busy: bool) -> None:
         self.run_button.set_busy(busy)
