@@ -35,8 +35,25 @@ class ConfigServiceTests(unittest.TestCase):
                         config = config_service.load_config()
                         self.assertTrue(config_file.exists())
                         self.assertTrue(resources_file.exists())
-        self.assertEqual(config["version"], 4)
+        self.assertEqual(config["version"], 5)
         self.assertIn("skills", config["sourceDirs"])
+
+    def test_load_config_discovers_default_project_skill_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "project" / "cloud_his" / "skills").mkdir(parents=True)
+            config_file = root / "config.json"
+            resources_file = root / "state" / "resources.json"
+            with mock.patch.object(config_service, "PROJECT_ROOT", root):
+                with mock.patch.object(config_service, "PROJECT_SKILLS_ROOT", root / "project"):
+                    with mock.patch.object(config_service, "CONFIG_FILE", config_file):
+                        with mock.patch.object(resource_state_service, "DEFAULT_RESOURCE_STATE_FILE", resources_file):
+                            config = config_service.load_config()
+        self.assertEqual(config["projectSkillProjects"][0]["id"], "cloud_his")
+        self.assertEqual(
+            config["projectSkillProjects"][0]["skillSourceDir"],
+            str((root / "project" / "cloud_his" / "skills").resolve()),
+        )
 
 
 if __name__ == "__main__":

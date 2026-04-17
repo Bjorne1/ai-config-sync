@@ -18,7 +18,21 @@ DEFAULT_RESOURCE_STATE_FILE = _default_state_dir() / "resources.json"
 
 
 def create_default_resources() -> dict[str, dict[str, dict[str, list[str]]]]:
-    return {"skills": {}, "commands": {}}
+    return {"skills": {}, "commands": {}, "projectSkills": {}}
+
+
+def normalize_project_skill_resources(
+    raw_resources: object,
+) -> dict[str, dict[str, dict[str, list[str]]]]:
+    entries = raw_resources.items() if isinstance(raw_resources, dict) else []
+    normalized: dict[str, dict[str, dict[str, list[str]]]] = {}
+    for project_id, assignments in entries:
+        if not isinstance(project_id, str) or not project_id.strip():
+            continue
+        normalized_assignments = normalize_resource_map(assignments)
+        if normalized_assignments:
+            normalized[project_id] = normalized_assignments
+    return normalized
 
 
 def normalize_resources_shape(raw_resources: object) -> dict[str, dict[str, dict[str, list[str]]]]:
@@ -26,6 +40,7 @@ def normalize_resources_shape(raw_resources: object) -> dict[str, dict[str, dict
     return {
         "skills": normalize_resource_map(source.get("skills")),
         "commands": normalize_resource_map(source.get("commands")),
+        "projectSkills": normalize_project_skill_resources(source.get("projectSkills")),
     }
 
 

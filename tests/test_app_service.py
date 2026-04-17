@@ -14,7 +14,7 @@ def _create_config(root: Path) -> dict[str, object]:
     (skills_dir / "demo-skill").mkdir()
     (commands_dir / "brainstorming.md").write_text("# test", encoding="utf-8")
     return {
-        "version": 4,
+        "version": 5,
         "syncMode": "copy",
         "sourceDirs": {
             "skills": str(skills_dir),
@@ -59,9 +59,11 @@ def _create_config(root: Path) -> dict[str, object]:
         "resources": {
             "skills": {"demo-skill": {"windows": ["claude"]}},
             "commands": {"brainstorming.md": {"windows": ["codex"]}},
+            "projectSkills": {},
         },
         "commandSubfolderSupport": {"default": False, "tools": {"claude": True}},
         "updateTools": {"Codex": {"type": "npm", "package": "@openai/codex"}},
+        "projectSkillProjects": [],
     }
 
 
@@ -132,6 +134,81 @@ class AppServiceTests(unittest.TestCase):
 
             self.assertFalse(target_path.exists())
             self.assertTrue(result)
+            self.assertTrue(result[0]["success"])
+
+    def test_sync_project_skills_accepts_assignment_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _create_config(root)
+            project_source = root / "project" / "cloud_his" / "skills" / "deploy-cloud-service"
+            project_source.mkdir(parents=True)
+            project_root = root / "repos" / "cloud_his"
+            project_root.mkdir(parents=True)
+            config["projectSkillProjects"] = [
+                {
+                    "id": "cloud_his",
+                    "skillSourceDir": str(project_source.parent),
+                    "windowsProjectRoot": str(project_root),
+                    "wslProjectRoot": "",
+                }
+            ]
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                }
+            )
+
+            result = app_service.sync_selected_project_skills(
+                [{"projectId": "cloud_his", "skillName": "deploy-cloud-service"}],
+                {"cloud_his": {"deploy-cloud-service": {"windows": ["codex"]}}},
+            )
+
+            target_path = project_root / ".agents" / "skills" / "deploy-cloud-service"
+            self.assertTrue(target_path.exists())
+            self.assertEqual(len(result), 1)
+            self.assertTrue(result[0]["success"])
+
+    def test_remove_project_skills_deletes_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _create_config(root)
+            project_source = root / "project" / "cloud_his" / "skills" / "deploy-cloud-service"
+            project_source.mkdir(parents=True)
+            project_root = root / "repos" / "cloud_his"
+            project_root.mkdir(parents=True)
+            config["projectSkillProjects"] = [
+                {
+                    "id": "cloud_his",
+                    "skillSourceDir": str(project_source.parent),
+                    "windowsProjectRoot": str(project_root),
+                    "wslProjectRoot": "",
+                }
+            ]
+            app_service = create_app_service(
+                {
+                    "load_config": lambda: config,
+                    "save_config": lambda next_config: next_config,
+                    "list_wsl_distros": lambda: [],
+                    "get_default_wsl_distro": lambda: None,
+                    "get_wsl_home_dir": lambda distro: None,
+                }
+            )
+            assignments = {"cloud_his": {"deploy-cloud-service": {"windows": ["claude"]}}}
+            app_service.sync_selected_project_skills(
+                [{"projectId": "cloud_his", "skillName": "deploy-cloud-service"}],
+                assignments,
+            )
+
+            result = app_service.remove_selected_project_skills(
+                [{"projectId": "cloud_his", "skillName": "deploy-cloud-service"}],
+                assignments,
+            )
+
+            self.assertFalse((project_root / ".claude" / "skills" / "deploy-cloud-service").exists())
             self.assertTrue(result[0]["success"])
 
     def test_add_skill_from_url_does_not_require_specific_skill_url(self) -> None:

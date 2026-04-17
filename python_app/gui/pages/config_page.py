@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -16,6 +18,50 @@ from PySide6.QtWidgets import (
 from ...core.tool_definitions import TOOL_IDS
 from ..dashboard import serialize
 from ..widgets import ActionButton, CardFrame, layout_container
+
+
+class ProjectSkillProjectEditor(QWidget):
+    remove_requested = Signal(QWidget)
+    changed = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
+        self.project_id = QLineEdit()
+        self.skill_source = QLineEdit()
+        self.windows_root = QLineEdit()
+        self.wsl_root = QLineEdit()
+        remove_button = QPushButton("删除")
+        remove_button.clicked.connect(lambda: self.remove_requested.emit(self))
+        fields = (
+            ("项目名", self.project_id),
+            ("Skill 来源目录", self.skill_source),
+            ("Windows 项目根目录", self.windows_root),
+            ("WSL 项目根目录", self.wsl_root),
+        )
+        for row, (label, editor) in enumerate(fields):
+            layout.addWidget(QLabel(label), row, 0)
+            layout.addWidget(editor, row, 1)
+            editor.textChanged.connect(self.changed.emit)
+        layout.addWidget(remove_button, 0, 2)
+        layout.setColumnStretch(1, 1)
+
+    def set_value(self, project: dict[str, object]) -> None:
+        self.project_id.setText(str(project.get("id") or ""))
+        self.skill_source.setText(str(project.get("skillSourceDir") or ""))
+        self.windows_root.setText(str(project.get("windowsProjectRoot") or ""))
+        self.wsl_root.setText(str(project.get("wslProjectRoot") or ""))
+
+    def value(self) -> dict[str, str]:
+        return {
+            "id": self.project_id.text().strip(),
+            "skillSourceDir": self.skill_source.text().strip(),
+            "windowsProjectRoot": self.windows_root.text().strip(),
+            "wslProjectRoot": self.wsl_root.text().strip(),
+        }
 
 
 class ConfigPage(QWidget):
@@ -26,20 +72,31 @@ class ConfigPage(QWidget):
         super().__init__(parent)
         self._targets: dict[tuple[str, str, str], QLineEdit] = {}
         self._tool_support: dict[str, QCheckBox] = {}
+        self._project_rows: list[ProjectSkillProjectEditor] = []
         self._original_patch: dict[str, object] | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._content = QWidget()
+        layout = QVBoxLayout(self._content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
         layout.addWidget(self._build_top_cards())
         layout.addWidget(self._build_target_stack())
+        layout.addWidget(self._build_project_skills_card())
         layout.addWidget(self._build_support_card())
         self.dirty_label = QLabel("")
         self.dirty_label.setObjectName("muted")
         layout.addWidget(self.dirty_label)
         layout.addStretch(1)
+        self.scroll.setWidget(self._content)
+        outer.addWidget(self.scroll, 1)
 
     def _build_top_cards(self) -> QWidget:
         grid = QGridLayout()
@@ -154,6 +211,22 @@ class ConfigPage(QWidget):
         card.body_layout.addLayout(grid)
         return card
 
+    def _build_project_skills_card(self) -> QWidget:
+        card = CardFrame("项目 Skills 配置", "每个项目分别设置 Skill 来源目录、Windows 项目根目录和 WSL 项目根目录。")
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        self.add_project_button = ActionButton("新增项目", "secondary")
+        self.add_project_button.clicked.connect(lambda: self._add_project_row({}))
+        header.addStretch(1)
+        header.addWidget(self.add_project_button)
+        self.project_rows_layout = QVBoxLayout()
+        self.project_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.project_rows_layout.setSpacing(12)
+        card.body_layout.addLayout(header)
+        card.body_layout.addLayout(self.project_rows_layout)
+        return card
+
     def _connect_dirty_signals(self, widgets: list[QWidget]) -> None:
         for widget in widgets:
             signal = getattr(widget, "textChanged", None) or getattr(widget, "currentTextChanged", None)
@@ -176,6 +249,7 @@ class ConfigPage(QWidget):
         self.wsl_home.setText(wsl_runtime["homeDir"] or "未检测")
         self.wsl_error.setText(wsl_runtime["error"] or "")
         self._fill_targets(config)
+        self._set_project_rows(config.get("projectSkillProjects", []))
         self.default_support.setChecked(config["commandSubfolderSupport"]["default"])
         for tool_id, checkbox in self._tool_support.items():
             checkbox.setChecked(bool(config["commandSubfolderSupport"]["tools"].get(tool_id)))
@@ -206,6 +280,7 @@ class ConfigPage(QWidget):
                 "default": self.default_support.isChecked(),
                 "tools": {tool_id: checkbox.isChecked() for tool_id, checkbox in self._tool_support.items()},
             },
+            "projectSkillProjects": self._collect_project_rows(),
         }
 
     def _collect_targets(self, environment_id: str) -> dict[str, dict[str, str]]:
@@ -220,6 +295,7 @@ class ConfigPage(QWidget):
     def set_busy(self, reload_busy: bool, save_busy: bool) -> None:
         self.reload_button.set_busy(reload_busy)
         self.save_button.set_busy(save_busy)
+        self.add_project_button.set_busy(save_busy)
 
     def _patch_from_config(self, config: dict[str, object]) -> dict[str, object]:
         return {
@@ -233,6 +309,7 @@ class ConfigPage(QWidget):
                 },
             },
             "commandSubfolderSupport": deepcopy(config["commandSubfolderSupport"]),
+            "projectSkillProjects": deepcopy(config.get("projectSkillProjects", [])),
         }
 
     def _refresh_dirty(self) -> None:
@@ -241,3 +318,37 @@ class ConfigPage(QWidget):
             return
         dirty = serialize(self.get_patch()) != serialize(self._original_patch)
         self.dirty_label.setText("有未保存的修改" if dirty else "配置已保存")
+
+    def _set_project_rows(self, projects: object) -> None:
+        while self._project_rows:
+            row = self._project_rows.pop()
+            row.setParent(None)
+            row.deleteLater()
+        items = projects if isinstance(projects, list) else []
+        for project in items:
+            self._add_project_row(project, refresh=False)
+        self._refresh_dirty()
+
+    def _add_project_row(self, project: object, *, refresh: bool = True) -> None:
+        row = ProjectSkillProjectEditor()
+        row.set_value(project if isinstance(project, dict) else {})
+        row.changed.connect(self._refresh_dirty)
+        row.remove_requested.connect(self._remove_project_row)
+        self._project_rows.append(row)
+        self.project_rows_layout.addWidget(row)
+        if refresh:
+            self._refresh_dirty()
+
+    def _remove_project_row(self, row: QWidget) -> None:
+        self._project_rows = [item for item in self._project_rows if item is not row]
+        row.setParent(None)
+        row.deleteLater()
+        self._refresh_dirty()
+
+    def _collect_project_rows(self) -> list[dict[str, str]]:
+        projects: list[dict[str, str]] = []
+        for row in self._project_rows:
+            value = row.value()
+            if value["id"]:
+                projects.append(value)
+        return projects

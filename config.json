@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "syncMode": "copy",
   "sourceDirs": {
     "skills": "D:\\wcs_project\\ai-config-sync\\skills",
@@ -67,5 +67,13 @@
       "type": "npm",
       "package": "@google/gemini-cli"
     }
-  }
+  },
+  "projectSkillProjects": [
+    {
+      "id": "cloud_his",
+      "skillSourceDir": "D:\\wcs_project\\ai-config-sync\\project\\cloud_his\\skills",
+      "windowsProjectRoot": "",
+      "wslProjectRoot": "~/projects/work-project/cloud_his"
+    }
+  ]
 }

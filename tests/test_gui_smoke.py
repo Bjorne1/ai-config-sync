@@ -5,13 +5,15 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QMessageBox
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QMessageBox, QScrollArea
 
 from python_app.controller import AppController
 from python_app.gui.logo_matrix import LOGO_ACTIVE_ROLE, LOGO_TOOL_ROLE, ToolLogoDelegate
 from python_app.gui.header_views import GroupedHeaderView
 from python_app.gui.main_window import MainWindow
 from python_app.gui.pages.global_rule_page import GlobalRulePage
+from python_app.gui.pages.config_page import ConfigPage
+from python_app.gui.pages.project_skills_page import ProjectSkillsPage
 from python_app.gui.pages.resource_page import ResourcePage
 from python_app.gui.pages.skill_upstream_dialogs import AddSkillFromUrlDialog
 from python_app.gui.pages.workflow_page import WorkflowPage
@@ -209,10 +211,56 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIsNone(page.set_url_button)
         self.assertIsNone(page.check_button)
 
-    def test_main_window_has_7_pages(self) -> None:
+    def test_project_skills_page_clicks_emit_project_payload(self) -> None:
+        page = ProjectSkillsPage()
+        captured: list[object] = []
+        page.sync_requested.connect(captured.append)
+        page.set_context(
+            [
+                {
+                    "id": "cloud_his",
+                    "skillSourceDir": r"D:\wcs_project\ai-config-sync\project\cloud_his\skills",
+                    "windowsProjectRoot": r"D:\repo\cloud_his",
+                    "wslProjectRoot": r"~/projects/cloud_his",
+                    "sourceMissing": False,
+                    "skills": [
+                        {
+                            "projectId": "cloud_his",
+                            "name": "deploy-cloud-service",
+                            "path": r"D:\wcs_project\ai-config-sync\project\cloud_his\skills\deploy-cloud-service",
+                            "isDirectory": True,
+                            "description": "",
+                            "effectiveTargets": {},
+                            "entries": [],
+                        }
+                    ],
+                }
+            ]
+        )
+
+        page._handle_table_clicked(page.table.model().index(1, 4))
+
+        self.assertEqual(captured[0]["action"], "sync")
+        self.assertEqual(
+            captured[0]["items"],
+            [{"projectId": "cloud_his", "skillName": "deploy-cloud-service"}],
+        )
+        self.assertEqual(
+            captured[0]["assignments"]["cloud_his"]["deploy-cloud-service"]["windows"],
+            ["codex"],
+        )
+
+    def test_config_page_uses_scroll_area_for_project_skill_settings(self) -> None:
+        page = ConfigPage()
+
+        self.assertIsInstance(page.scroll, QScrollArea)
+        self.assertIsNotNone(page._content)
+        self.assertIsNotNone(page.add_project_button)
+
+    def test_main_window_has_project_skills_page(self) -> None:
         window = MainWindow()
-        self.assertEqual(window.pages.count(), 8)
-        self.assertFalse(hasattr(window, "skill_upstream_page"))
+        self.assertEqual(window.pages.count(), 9)
+        self.assertTrue(hasattr(window, "project_skills_page"))
 
     def test_resource_page_header_checkbox_selects_current_page_rows(self) -> None:
         page = ResourcePage("commands")

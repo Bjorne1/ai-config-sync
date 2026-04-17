@@ -9,6 +9,12 @@ from .environment_service import (
     list_wsl_distros,
     resolve_environment_targets,
 )
+from .project_skill_operations import (
+    build_project_skill_statuses,
+    remove_project_skills,
+    scan_project_skill_inventory,
+    sync_project_skills,
+)
 from .global_rule_runtime_service import build_global_rule_statuses
 from .global_rule_state_service import load_global_rules, save_global_rules
 from .global_rule_sync_service import sync_global_rules as sync_global_rule_targets
@@ -53,6 +59,23 @@ def _replace_resource_map(
     )
 
 
+def _replace_project_skill_map(
+    config: dict[str, object],
+    assignments: dict[str, dict[str, dict[str, list[str]]]],
+) -> dict[str, object]:
+    return save_config(
+        normalize_config_shape(
+            {
+                **config,
+                "resources": {
+                    **config["resources"],
+                    "projectSkills": assignments,
+                },
+            }
+        )
+    )
+
+
 def _save_settings(config: dict[str, object], patch: dict[str, object]) -> dict[str, object]:
     next_config = normalize_config_shape(
         {
@@ -66,6 +89,10 @@ def _save_settings(config: dict[str, object], patch: dict[str, object]) -> dict[
                 **config["sourceDirs"],
                 **patch.get("sourceDirs", {}),
             },
+            "projectSkillProjects": patch.get(
+                "projectSkillProjects",
+                config.get("projectSkillProjects", []),
+            ),
         }
     )
     return save_config(next_config)
@@ -123,6 +150,7 @@ class AppService:
             "environments": environments,
             "skills": build_resource_statuses(config, "skills", environments),
             "commands": build_resource_statuses(config, "commands", environments),
+            "projectSkills": build_project_skill_statuses(config, environments),
         }
 
     def get_global_rules(self) -> dict[str, object]:
@@ -164,6 +192,9 @@ class AppService:
 
     def scan_resources(self, kind: str) -> list[dict[str, object]]:
         return scan_resources(self.deps.load_config(), kind)
+
+    def scan_project_skills(self) -> list[dict[str, object]]:
+        return scan_project_skill_inventory(self.deps.load_config())
 
     def get_skill_upstreams(self) -> dict[str, dict[str, object]]:
         return self.deps.load_skill_upstreams()
@@ -282,12 +313,23 @@ class AppService:
     ) -> dict[str, object]:
         return _replace_resource_map(self.deps.load_config(), kind, assignments)
 
+    def replace_project_skill_map(
+        self,
+        assignments: dict[str, dict[str, dict[str, list[str]]]],
+    ) -> dict[str, object]:
+        return _replace_project_skill_map(self.deps.load_config(), assignments)
+
     def sync_all(self) -> dict[str, list[dict[str, object]]]:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
         return {
             "skills": sync_configured_resources(config, "skills", environments),
             "commands": sync_configured_resources(config, "commands", environments),
+            "projectSkills": sync_project_skills(
+                config,
+                environments,
+                scan_project_skill_inventory(config),
+            ),
         }
 
     def sync_resources(
@@ -319,6 +361,36 @@ class AppService:
         config = self.deps.load_config()
         environments = build_environment_list(config, self._runtime_deps())
         return remove_configured_resources(config, kind, environments, names, assignments)
+
+    def sync_selected_project_skills(
+        self,
+        items: list[dict[str, str]],
+        assignments: dict[str, dict[str, dict[str, list[str]]]] | None = None,
+    ) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        return sync_project_skills(
+            config,
+            environments,
+            scan_project_skill_inventory(config),
+            items,
+            assignments,
+        )
+
+    def remove_selected_project_skills(
+        self,
+        items: list[dict[str, str]],
+        assignments: dict[str, dict[str, dict[str, list[str]]]] | None = None,
+    ) -> list[dict[str, object]]:
+        config = self.deps.load_config()
+        environments = build_environment_list(config, self._runtime_deps())
+        return remove_project_skills(
+            config,
+            environments,
+            scan_project_skill_inventory(config),
+            items,
+            assignments,
+        )
 
     def update_tools(self, target_versions: dict[str, str] | None = None) -> list[dict[str, object]]:
         config = self.deps.load_config()

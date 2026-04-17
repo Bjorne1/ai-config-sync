@@ -18,6 +18,10 @@ _ICON_BODIES: dict[str, str] = {
         '<rect x="9.5" y="9.5" width="5" height="5" rx="1"/>'
     ),
     "skills": '<path d="M9 1.5L4 8.5h4l-1 6 5-7H8.5z"/>',
+    "projectSkills": (
+        '<path d="M2 13V4.5a1 1 0 0 1 1-1h4l1 1.5h5a1 1 0 0 1 1 1V13"/>'
+        '<path d="M7 6.5l-2 3h1.6l-.7 4 3.1-4.5H7.4z"/>'
+    ),
     "commands": (
         '<polyline points="3,4.5 7,8 3,11.5"/>'
         '<line x1="9" y1="12" x2="13" y2="12"/>'

@@ -28,6 +28,20 @@ def expand_wsl_path(input_path: str, home_dir: str | None) -> str:
     return input_path.replace(WSL_HOME_TOKEN, home_dir)
 
 
+def expand_posix_home_path(input_path: str, home_dir: str | None) -> str:
+    if not input_path:
+        return ""
+    if not home_dir:
+        raise RuntimeError("WSL home directory is required to resolve WSL targets.")
+    normalized = input_path.replace("\\", "/")
+    if normalized.startswith("~/"):
+        normalized = f"{home_dir}/{normalized.removeprefix('~/')}"
+    elif normalized == "~":
+        normalized = home_dir
+    normalized = normalized.replace(WSL_HOME_TOKEN, home_dir)
+    return normalized
+
+
 def _run_text_command(args: list[str]) -> str:
     completed = subprocess.run(args, capture_output=True, check=True, **hidden_subprocess_kwargs())
     stdout = completed.stdout

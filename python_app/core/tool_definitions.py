@@ -41,6 +41,13 @@ TOOL_LAYOUTS = MappingProxyType(
 TOOL_IDS = tuple(TOOL_LAYOUTS.keys())
 TOOL_KIND_IDS = ("skills", "commands")
 ENVIRONMENT_IDS = ("windows", "wsl")
+PROJECT_SKILL_TOOL_IDS = ("claude", "codex")
+PROJECT_SKILL_TARGET_SEGMENTS = MappingProxyType(
+    {
+        "claude": (".claude", "skills"),
+        "codex": (".agents", "skills"),
+    }
+)
 GLOBAL_RULE_TOOL_IDS = ("claude", "codex", "gemini")
 GLOBAL_RULE_FILE_NAMES = MappingProxyType(
     {
@@ -62,7 +69,7 @@ DEFAULT_UPDATE_TOOLS = {
     "ace-tool": {"type": "npm", "package": "ace-tool"},
 }
 DEFAULT_SYNC_MODE = "symlink"
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 WINDOWS_HOME_TOKEN = "%USERPROFILE%"
 WSL_HOME_TOKEN = "$HOME"
 

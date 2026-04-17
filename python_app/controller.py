@@ -22,6 +22,14 @@ class SyncRequest:
     commit_remove: bool
 
 
+@dataclass(frozen=True)
+class ProjectSkillSyncRequest:
+    action: str
+    items: list[dict[str, str]]
+    assignments: dict[str, dict[str, dict[str, list[str]]]]
+    commit_assignments: dict[str, dict[str, dict[str, list[str]]]]
+
+
 class AppController(QObject):
     def __init__(self, window: MainWindow, service: AppService | None = None) -> None:
         super().__init__()
@@ -69,6 +77,8 @@ class AppController(QObject):
         self.window.skill_set_url_requested.connect(self._skill_set_url)
         self.window.skill_check_requested.connect(self._skill_check)
         self.window.skill_upgrade_requested.connect(self._skill_upgrade)
+        self.window.project_skill_refresh_requested.connect(self._refresh_project_skills)
+        self.window.project_skill_sync_requested.connect(self._project_skill_sync)
         self.window.workflow_action_requested.connect(self._workflow_action)
 
     def _fetch_snapshot(self) -> dict[str, object]:
@@ -140,13 +150,20 @@ class AppController(QObject):
         self._run_task("syncAll", "全量同步", self.service.sync_all, self._after_sync_all)
 
     def _after_sync_all(self, result: dict[str, list[dict[str, object]]]) -> None:
-        summary = f"Skills {summarize_sync(result['skills'])}；Commands {summarize_sync(result['commands'])}"
+        summary = (
+            f"Skills {summarize_sync(result['skills'])}；"
+            f"项目Skills {summarize_sync(result['projectSkills'])}；"
+            f"Commands {summarize_sync(result['commands'])}"
+        )
         self.window.set_last_sync_summary(summary)
         self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncAll")
 
     def _rescan_kind(self, kind: str) -> None:
         key = "scanSkills" if kind == "skills" else "scanCommands"
         self.refresh_snapshot(busy_key=key)
+
+    def _refresh_project_skills(self) -> None:
+        self.refresh_snapshot(busy_key="scanProjectSkills")
 
     def _sync_selected(self, kind: str, payload: object) -> None:
         key = "syncSkills" if kind == "skills" else "syncCommands"
@@ -173,6 +190,28 @@ class AppController(QObject):
         self.window.set_last_sync_summary(f"{kind.capitalize()} {summarize_sync(result)}")
         refresh_key = "refreshAfterSyncSkills" if kind == "skills" else "refreshAfterSyncCommands"
         self.refresh_snapshot(reset_error=False, busy_key=refresh_key)
+
+    def _project_skill_sync(self, payload: object) -> None:
+        request = self._parse_project_skill_sync_request(payload)
+
+        def task() -> object:
+            if not request.items:
+                raise ValueError("未选择任何项目 Skill。")
+            self.service.replace_project_skill_map(request.commit_assignments)
+            if request.action == "remove":
+                return self.service.remove_selected_project_skills(request.items, request.assignments)
+            return self.service.sync_selected_project_skills(request.items, request.assignments)
+
+        self._run_task(
+            "syncProjectSkills",
+            "同步项目 Skills",
+            task,
+            self._after_project_skill_sync,
+        )
+
+    def _after_project_skill_sync(self, result: list[dict[str, object]]) -> None:
+        self.window.set_last_sync_summary(f"项目Skills {summarize_sync(result)}")
+        self.refresh_snapshot(reset_error=False, busy_key="refreshAfterSyncProjectSkills")
 
     def _save_config(self, patch: dict[str, object]) -> None:
         self._run_task(
@@ -652,6 +691,34 @@ class AppController(QObject):
                 continue
             normalized[normalized_name] = normalized_version
         return normalized or None
+
+    def _parse_project_skill_sync_request(
+        self,
+        payload: object,
+    ) -> ProjectSkillSyncRequest:
+        if not isinstance(payload, dict):
+            raise ValueError("project skill payload must be a dict.")
+        action = str(payload.get("action") or "sync").strip()
+        if action not in {"sync", "remove"}:
+            raise ValueError("project skill action must be sync or remove.")
+        items = payload.get("items")
+        assignments = payload.get("assignments")
+        commit_assignments = payload.get("commitAssignments")
+        if not isinstance(items, list):
+            raise ValueError("project skill items must be a list.")
+        if not isinstance(assignments, dict):
+            raise ValueError("project skill assignments must be a dict.")
+        if not isinstance(commit_assignments, dict):
+            raise ValueError("project skill commitAssignments must be a dict.")
+        normalized_items: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            project_id = str(item.get("projectId") or "").strip()
+            skill_name = str(item.get("skillName") or "").strip()
+            if project_id and skill_name:
+                normalized_items.append({"projectId": project_id, "skillName": skill_name})
+        return ProjectSkillSyncRequest(action, normalized_items, assignments, commit_assignments)
 
     def _parse_global_rule_targets(
         self,

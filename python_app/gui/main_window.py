@@ -17,6 +17,7 @@ from .pages.cleanup_page import CleanupPage
 from .pages.config_page import ConfigPage
 from .pages.global_rule_page import GlobalRulePage
 from .pages.overview_page import OverviewPage
+from .pages.project_skills_page import ProjectSkillsPage
 from .pages.resource_page import ResourcePage
 from .pages.tools_page import ToolsPage
 from .pages.workflow_page import WorkflowPage
@@ -27,6 +28,7 @@ from .widgets import NavButton
 PAGE_KEYS = (
     "overview",
     "skills",
+    "projectSkills",
     "commands",
     "globalRules",
     "workflows",
@@ -34,7 +36,7 @@ PAGE_KEYS = (
     "cleanup",
     "config",
 )
-PAGE_LABELS = ("概览", "Skills", "Commands", "全局规则", "工作流", "工具更新", "清理", "配置")
+PAGE_LABELS = ("概览", "Skills", "项目Skills", "Commands", "全局规则", "工作流", "工具更新", "清理", "配置")
 
 
 class MainWindow(QMainWindow):
@@ -56,6 +58,8 @@ class MainWindow(QMainWindow):
     skill_set_url_requested = Signal(object)
     skill_check_requested = Signal(object)
     skill_upgrade_requested = Signal(object)
+    project_skill_refresh_requested = Signal()
+    project_skill_sync_requested = Signal(object)
     workflow_action_requested = Signal(str, str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -134,6 +138,7 @@ class MainWindow(QMainWindow):
     def _create_pages(self) -> None:
         self.overview_page = OverviewPage()
         self.skills_page = ResourcePage("skills")
+        self.project_skills_page = ProjectSkillsPage()
         self.commands_page = ResourcePage("commands")
         self.global_rule_page = GlobalRulePage()
         self.workflow_page = WorkflowPage()
@@ -143,6 +148,7 @@ class MainWindow(QMainWindow):
         page_list = [
             self.overview_page,
             self.skills_page,
+            self.project_skills_page,
             self.commands_page,
             self.global_rule_page,
             self.workflow_page,
@@ -160,6 +166,8 @@ class MainWindow(QMainWindow):
         self.skills_page.set_url_requested.connect(self.skill_set_url_requested.emit)
         self.skills_page.check_upstream_requested.connect(self.skill_check_requested.emit)
         self.skills_page.upgrade_upstream_requested.connect(self.skill_upgrade_requested.emit)
+        self.project_skills_page.refresh_requested.connect(self.project_skill_refresh_requested.emit)
+        self.project_skills_page.sync_requested.connect(self.project_skill_sync_requested.emit)
         self.commands_page.rescan_requested.connect(self.rescan_requested.emit)
         self.commands_page.sync_requested.connect(self.sync_selected_requested.emit)
         self.global_rule_page.refresh_requested.connect(self.global_rule_refresh_requested.emit)
@@ -257,6 +265,7 @@ class MainWindow(QMainWindow):
             self.snapshot["inventory"]["skills"],
             self.snapshot.get("skillUpstreams", {}),
         )
+        self.project_skills_page.set_context(self.snapshot["status"].get("projectSkills", []))
         self.commands_page.set_rows(self._resource_rows("commands"))
         self.global_rule_page.set_context(
             self.snapshot.get("globalRules", {}),
@@ -294,6 +303,10 @@ class MainWindow(QMainWindow):
             self._busy("scanSkills"),
             self._busy("syncSkills"),
             upstream_busy,
+        )
+        self.project_skills_page.set_busy(
+            self._busy("scanProjectSkills"),
+            self._busy("syncProjectSkills"),
         )
         self.commands_page.set_busy(self._busy("scanCommands"), self._busy("syncCommands"))
         busy_gr_targets: set[tuple[str, str]] = set()

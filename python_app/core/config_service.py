@@ -19,6 +19,7 @@ from .tool_definitions import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_SKILLS_ROOT = PROJECT_ROOT / "project"
 CONFIG_FILE = PROJECT_ROOT / "config.json"
 LEGACY_RESOURCE_STATE_FILE = PROJECT_ROOT / "resources.json"
 ABSOLUTE_PATH_PATTERN = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/])")
@@ -90,6 +91,59 @@ def normalize_update_tools(raw_tools: object) -> dict[str, dict[str, str]]:
     return normalized
 
 
+def discover_project_skill_projects() -> list[dict[str, str]]:
+    if not PROJECT_SKILLS_ROOT.exists():
+        return []
+    projects: list[dict[str, str]] = []
+    for item in sorted(PROJECT_SKILLS_ROOT.iterdir(), key=lambda entry: entry.name.lower()):
+        if not item.is_dir():
+            continue
+        skills_dir = item / "skills"
+        if not skills_dir.exists() or not skills_dir.is_dir():
+            continue
+        projects.append(
+            {
+                "id": item.name,
+                "skillSourceDir": str(skills_dir.resolve()),
+                "windowsProjectRoot": "",
+                "wslProjectRoot": "",
+            }
+        )
+    return projects
+
+
+def normalize_project_skill_projects(
+    raw_projects: object,
+    *,
+    defaults: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    normalized: dict[str, dict[str, str]] = {}
+    for project in defaults or []:
+        project_id = str(project.get("id") or "").strip()
+        if not project_id:
+            continue
+        normalized[project_id] = {
+            "id": project_id,
+            "skillSourceDir": resolve_source_dir(project.get("skillSourceDir")) or "",
+            "windowsProjectRoot": str(project.get("windowsProjectRoot") or "").strip(),
+            "wslProjectRoot": str(project.get("wslProjectRoot") or "").strip(),
+        }
+    entries = raw_projects if isinstance(raw_projects, list) else []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        project_id = str(item.get("id") or "").strip()
+        if not project_id:
+            continue
+        normalized[project_id] = {
+            "id": project_id,
+            "skillSourceDir": resolve_source_dir(item.get("skillSourceDir")) or "",
+            "windowsProjectRoot": str(item.get("windowsProjectRoot") or "").strip(),
+            "wslProjectRoot": str(item.get("wslProjectRoot") or "").strip(),
+        }
+    return [normalized[project_id] for project_id in sorted(normalized)]
+
+
 def create_default_config() -> dict[str, object]:
     return {
         "version": CONFIG_VERSION,
@@ -116,6 +170,9 @@ def create_default_config() -> dict[str, object]:
         },
         "commandSubfolderSupport": normalize_command_subfolder_support(None),
         "updateTools": normalize_update_tools(None),
+        "projectSkillProjects": normalize_project_skill_projects(
+            discover_project_skill_projects()
+        ),
     }
 
 
@@ -133,58 +190,80 @@ def merge_targets(default_targets: dict[str, str], overrides: object) -> dict[st
 def migrate_legacy_config(legacy_config: object) -> dict[str, object]:
     defaults = create_default_config()
     legacy = legacy_config if isinstance(legacy_config, dict) else {}
+    source_dirs = legacy.get("sourceDirs") if isinstance(legacy.get("sourceDirs"), dict) else {}
+    environments = legacy.get("environments") if isinstance(legacy.get("environments"), dict) else {}
+    windows = environments.get("windows") if isinstance(environments.get("windows"), dict) else {}
+    wsl = environments.get("wsl") if isinstance(environments.get("wsl"), dict) else {}
     return {
         "version": CONFIG_VERSION,
         "syncMode": legacy.get("syncMode") or DEFAULT_SYNC_MODE,
         "sourceDirs": {
-            "skills": resolve_source_dir(legacy.get("sourceDir") or defaults["sourceDirs"]["skills"]),
+            "skills": resolve_source_dir(
+                legacy.get("sourceDir")
+                or source_dirs.get("skills")
+                or defaults["sourceDirs"]["skills"]
+            ),
             "commands": resolve_source_dir(
-                legacy.get("commandsSourceDir") or defaults["sourceDirs"]["commands"]
+                legacy.get("commandsSourceDir")
+                or source_dirs.get("commands")
+                or defaults["sourceDirs"]["commands"]
             ),
         },
         "environments": {
             "windows": {
                 "enabled": True,
                 "targets": {
-                    "skills": merge_targets(defaults["environments"]["windows"]["targets"]["skills"], legacy.get("targets")),
+                    "skills": merge_targets(
+                        defaults["environments"]["windows"]["targets"]["skills"],
+                        legacy.get("targets") or windows.get("targets", {}).get("skills"),
+                    ),
                     "commands": merge_targets(
                         defaults["environments"]["windows"]["targets"]["commands"],
-                        legacy.get("commandTargets"),
+                        legacy.get("commandTargets") or windows.get("targets", {}).get("commands"),
                     ),
                 },
             },
             "wsl": {
-                "selectedDistro": legacy.get("wslDistro"),
+                "selectedDistro": legacy.get("wslDistro") or wsl.get("selectedDistro"),
                 "targets": {
                     "skills": merge_targets(
                         defaults["environments"]["wsl"]["targets"]["skills"],
-                        legacy.get("wslTargets", {}).get("skills"),
+                        legacy.get("wslTargets", {}).get("skills") or wsl.get("targets", {}).get("skills"),
                     ),
                     "commands": merge_targets(
                         defaults["environments"]["wsl"]["targets"]["commands"],
-                        legacy.get("wslTargets", {}).get("commands"),
+                        legacy.get("wslTargets", {}).get("commands") or wsl.get("targets", {}).get("commands"),
                     ),
                 },
             },
         },
         "resources": {
             "skills": normalize_resource_map(
-                legacy.get("skills"),
+                legacy.get("skills") or legacy.get("resources", {}).get("skills"),
                 legacy_wsl_enabled=bool(legacy.get("wslEnabled")),
             ),
             "commands": normalize_resource_map(
-                legacy.get("commands"),
+                legacy.get("commands") or legacy.get("resources", {}).get("commands"),
                 legacy_wsl_enabled=bool(legacy.get("wslEnabled")),
             ),
+            "projectSkills": legacy.get("resources", {}).get("projectSkills", {}),
         },
         "commandSubfolderSupport": normalize_command_subfolder_support(
             legacy.get("commandSubfolderSupport")
         ),
         "updateTools": normalize_update_tools(legacy.get("updateTools")),
+        "projectSkillProjects": normalize_project_skill_projects(
+            legacy.get("projectSkillProjects"),
+            defaults=defaults.get("projectSkillProjects"),
+        ),
     }
 
 
-def normalize_config_shape(raw_config: object) -> dict[str, object]:
+def normalize_config_shape(
+    raw_config: object,
+    *,
+    project_defaults: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
     defaults = create_default_config()
     config = raw_config if isinstance(raw_config, dict) else {}
     environments = config.get("environments") if isinstance(config.get("environments"), dict) else {}
@@ -235,6 +314,10 @@ def normalize_config_shape(raw_config: object) -> dict[str, object]:
             config.get("commandSubfolderSupport")
         ),
         "updateTools": normalize_update_tools(config.get("updateTools")),
+        "projectSkillProjects": normalize_project_skill_projects(
+            config.get("projectSkillProjects"),
+            defaults=project_defaults,
+        ),
     }
 
 
@@ -250,7 +333,10 @@ def parse_config_file(raw_content: str) -> tuple[dict[str, object], bool, dict[s
     if is_legacy_config(parsed):
         migrated = migrate_legacy_config(parsed)
         return migrated, True, migrated.get("resources") if isinstance(migrated.get("resources"), dict) else None
-    normalized = normalize_config_shape(parsed)
+    normalized = normalize_config_shape(
+        parsed,
+        project_defaults=discover_project_skill_projects() if parsed.get("version") != CONFIG_VERSION else None,
+    )
     migrated = parsed.get("version") != CONFIG_VERSION or embedded_resources is not None
     return normalized, migrated, embedded_resources
 
@@ -265,7 +351,7 @@ def ensure_config_directories(config: dict[str, object]) -> None:
 def _has_resource_assignments(resources: dict[str, object]) -> bool:
     if not isinstance(resources, dict):
         return False
-    for kind in ("skills", "commands"):
+    for kind in ("skills", "commands", "projectSkills"):
         assignments = resources.get(kind)
         if isinstance(assignments, dict) and assignments:
             return True
@@ -300,7 +386,7 @@ def load_config() -> dict[str, object]:
         return save_config(created)
     raw_content = CONFIG_FILE.read_text(encoding="utf-8")
     config, migrated, embedded_resources = parse_config_file(raw_content)
-    runtime_resources = config.get("resources", {"skills": {}, "commands": {}})
+    runtime_resources = config.get("resources", {"skills": {}, "commands": {}, "projectSkills": {}})
     if embedded_resources is None:
         runtime_resources = _load_runtime_resources()
         config = {**config, "resources": runtime_resources}
