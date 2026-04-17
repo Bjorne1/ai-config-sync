@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -179,14 +180,114 @@ def _write_json(path: Path, data: object) -> None:
     )
 
 
+def _normalize_proxy_url(value: str, *, default_scheme: str = "http") -> str:
+    proxy = value.strip()
+    if not proxy:
+        return ""
+    if "://" in proxy:
+        return proxy
+    return f"{default_scheme}://{proxy}"
+
+
+def _parse_windows_proxy_server(proxy_server: str) -> dict[str, str]:
+    server = proxy_server.strip()
+    if not server:
+        return {}
+    if "=" not in server:
+        proxy = _normalize_proxy_url(server)
+        return {"HTTP_PROXY": proxy, "HTTPS_PROXY": proxy}
+
+    env: dict[str, str] = {}
+    for segment in server.split(";"):
+        key, sep, value = segment.partition("=")
+        if sep != "=":
+            continue
+        name = key.strip().lower()
+        proxy_value = value.strip()
+        if not proxy_value:
+            continue
+        if name == "http":
+            env["HTTP_PROXY"] = _normalize_proxy_url(proxy_value)
+        elif name == "https":
+            env["HTTPS_PROXY"] = _normalize_proxy_url(proxy_value)
+        elif name == "socks":
+            env["ALL_PROXY"] = _normalize_proxy_url(proxy_value, default_scheme="socks5")
+    if "HTTP_PROXY" not in env and "HTTPS_PROXY" in env:
+        env["HTTP_PROXY"] = env["HTTPS_PROXY"]
+    if "HTTPS_PROXY" not in env and "HTTP_PROXY" in env:
+        env["HTTPS_PROXY"] = env["HTTP_PROXY"]
+    return env
+
+
+def _read_windows_proxy_settings() -> dict[str, str]:
+    if os.name != "nt":
+        return {}
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        ) as key:
+            enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
+            if not enabled:
+                return {}
+            proxy_server, _ = winreg.QueryValueEx(key, "ProxyServer")
+    except (ImportError, OSError, ValueError):
+        return {}
+    if not isinstance(proxy_server, str):
+        return {}
+    return _parse_windows_proxy_server(proxy_server)
+
+
+def _detect_proxy_env() -> dict[str, str]:
+    env_names = (
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+    )
+    existing = {
+        name: value.strip()
+        for name in env_names
+        if isinstance((value := os.environ.get(name)), str) and value.strip()
+    }
+    if existing:
+        return existing
+    return _read_windows_proxy_settings()
+
+
+def _build_git_env() -> dict[str, str]:
+    env = os.environ.copy()
+    detected = _detect_proxy_env()
+    for name, value in detected.items():
+        env.setdefault(name, value)
+        env.setdefault(name.lower(), value)
+        env.setdefault(name.upper(), value)
+    return env
+
+
+def _build_wsl_proxy_exports(env: dict[str, str]) -> str:
+    exports: list[str] = []
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+        value = str(env.get(name) or env.get(name.lower()) or "").strip()
+        if not value:
+            continue
+        quoted = shlex.quote(value)
+        exports.append(f"export {name}={quoted} {name.lower()}={quoted}")
+    return "; ".join(exports)
+
+
 def _run_git(args: list[str], *, ctx: TargetContext) -> subprocess.CompletedProcess:
+    env = _build_git_env()
     if ctx.wsl_distro:
-        cmd_str = " ".join(args)
+        cmd_str = shlex.join(args)
+        proxy_exports = _build_wsl_proxy_exports(env)
+        if proxy_exports:
+            cmd_str = f"{proxy_exports}; {cmd_str}"
         return subprocess.run(
             ["wsl.exe", "-d", ctx.wsl_distro, "sh", "-lc", cmd_str],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=120, env=env,
         )
-    return subprocess.run(args, capture_output=True, text=True, timeout=120)
+    return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)
 
 
 # ---------------------------------------------------------------------------
